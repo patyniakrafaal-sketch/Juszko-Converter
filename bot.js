@@ -1,0 +1,199 @@
+import "dotenv/config";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Client,
+  EmbedBuilder,
+  GatewayIntentBits,
+  Partials,
+} from "discord.js";
+
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN?.trim() || "";
+const GUILD_ID = process.env.DISCORD_GUILD_ID?.trim() || "1386023301092081925";
+const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "1396866948687462482";
+const AFFCODE = process.env.AFFCODE?.trim() || "juszko20";
+
+if (!BOT_TOKEN) {
+  throw new Error("Brak DISCORD_BOT_TOKEN w .env");
+}
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+  partials: [Partials.Channel],
+});
+
+function safeUrl(input) {
+  return new URL(input.startsWith("http") ? input : `https://x.com/?${input}`);
+}
+
+function getEmbeddedUrl(input) {
+  const urlParam = safeUrl(input.trim());
+  const embedded =
+    urlParam.searchParams.get("url") ||
+    urlParam.searchParams.get("itemUrl") ||
+    urlParam.searchParams.get("item_url") ||
+    urlParam.searchParams.get("goodsUrl") ||
+    urlParam.searchParams.get("productLink") ||
+    urlParam.searchParams.get("originKeywordUrl") ||
+    urlParam.searchParams.get("sourceUrl") ||
+    urlParam.searchParams.get("link");
+
+  return embedded ? decodeURIComponent(embedded) : null;
+}
+
+function extractRawLink(input) {
+  let current = input.trim();
+
+  for (let index = 0; index < 4; index += 1) {
+    const embedded = getEmbeddedUrl(current);
+    if (!embedded) break;
+    current = embedded;
+  }
+
+  return current;
+}
+
+function buildCanonicalProductUrl(platform, id) {
+  if (platform === "1688") return `https://detail.1688.com/offer/${id}.html`;
+  if (platform === "weidian") return `https://weidian.com/item.html?itemID=${id}`;
+  if (platform === "taobao") return `https://item.taobao.com/item.htm?id=${id}`;
+  return id;
+}
+
+function parseSourceLink(rawUrl) {
+  const embedded = getEmbeddedUrl(rawUrl);
+  if (embedded) return parseSourceLink(embedded);
+
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.replace("www.", "");
+
+    if (host.includes("1688.com")) {
+      const match = url.pathname.match(/offer\/(\d+)/);
+      if (match) return { id: match[1], platform: "1688", rawUrl: buildCanonicalProductUrl("1688", match[1]) };
+    }
+
+    if (host.includes("taobao.com") || host.includes("tmall.com") || host.includes("world.taobao.com")) {
+      const id = url.searchParams.get("id");
+      if (id) return { id, platform: "taobao", rawUrl: buildCanonicalProductUrl("taobao", id) };
+      const match = url.pathname.match(/\/(\d+)\.html?/);
+      if (match) return { id: match[1], platform: "taobao", rawUrl: buildCanonicalProductUrl("taobao", match[1]) };
+    }
+
+    if (host.includes("weidian.com")) {
+      const id = url.searchParams.get("itemID") || url.searchParams.get("id");
+      if (id) return { id, platform: "weidian", rawUrl: buildCanonicalProductUrl("weidian", id) };
+    }
+
+    if (host.includes("kakobuy.com")) {
+      const id = url.searchParams.get("id");
+      if (id && /^\d+$/.test(id)) return { id, platform: "taobao", rawUrl: buildCanonicalProductUrl("taobao", id) };
+    }
+
+    if (host.includes("litbuy.com")) {
+      const match = url.pathname.match(/\/product\/(\d+)\/(\d+)/);
+      if (match) {
+        const platform = match[1] === "0" ? "1688" : match[1] === "2" ? "weidian" : "taobao";
+        return { id: match[2], platform, rawUrl: buildCanonicalProductUrl(platform, match[2]) };
+      }
+    }
+
+    if (host.includes("usfans.com") || host.includes("usfans.io")) {
+      const match = url.pathname.match(/\/product\/(\d+)\/(\d+)/);
+      if (match) {
+        const platform = match[1] === "1" ? "1688" : "taobao";
+        return { id: match[2], platform, rawUrl: buildCanonicalProductUrl(platform, match[2]) };
+      }
+    }
+
+    return { id: null, platform: "unknown", rawUrl };
+  } catch {
+    return { id: null, platform: "unknown", rawUrl };
+  }
+}
+
+function appendAffCode(urlValue) {
+  try {
+    const url = new URL(urlValue);
+    url.searchParams.set("affcode", AFFCODE);
+    return url.toString();
+  } catch {
+    return urlValue;
+  }
+}
+
+function buildAgentUrl(agent, parsed) {
+  const enc = encodeURIComponent(parsed.rawUrl);
+
+  if (agent === "rawlink") return appendAffCode(parsed.rawUrl);
+  if (agent === "kakobuy") return appendAffCode(`https://www.kakobuy.com/item/details?url=${enc}`);
+  if (agent === "litbuy") return appendAffCode(`https://www.litbuy.com/item/details?url=${enc}`);
+  if (agent === "usfans") return appendAffCode(`https://www.usfans.io/item/details?url=${enc}`);
+  return parsed.rawUrl;
+}
+
+function convertAllLinks(input) {
+  const rawUrl = extractRawLink(input);
+  const parsed = parseSourceLink(rawUrl);
+
+  return {
+    rawlink: buildAgentUrl("rawlink", parsed),
+    kakobuy: buildAgentUrl("kakobuy", parsed),
+    litbuy: buildAgentUrl("litbuy", parsed),
+    usfans: buildAgentUrl("usfans", parsed),
+  };
+}
+
+function extractFirstUrl(content) {
+  const match = content.match(/https?:\/\/[^\s<>()]+/i);
+  return match ? match[0] : null;
+}
+
+client.once("ready", () => {
+  console.log(`Bot zalogowany jako ${client.user?.tag}`);
+  console.log(`Nasłuch: guild=${GUILD_ID}, channel=${CHANNEL_ID}`);
+});
+
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+  if (!message.guild || message.guild.id !== GUILD_ID) return;
+  if (message.channel.id !== CHANNEL_ID) return;
+
+  const originalUrl = extractFirstUrl(message.content);
+  if (!originalUrl) return;
+
+  try {
+    const converted = convertAllLinks(originalUrl);
+
+    const embed = new EmbedBuilder()
+      .setColor(0x2b2d31)
+      .setTitle("Twoje przekonwertowane linki!")
+      .setDescription("Kliknij przycisk poniżej, żeby otworzyć wybrany link.")
+      .addFields({
+        name: "Oryginalny link",
+        value: originalUrl.length > 1024 ? `${originalUrl.slice(0, 1000)}...` : originalUrl,
+      });
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel("USFans").setStyle(ButtonStyle.Link).setURL(converted.usfans),
+      new ButtonBuilder().setLabel("Kakobuy").setStyle(ButtonStyle.Link).setURL(converted.kakobuy),
+      new ButtonBuilder().setLabel("LitBuy").setStyle(ButtonStyle.Link).setURL(converted.litbuy),
+      new ButtonBuilder().setLabel("Raw Link").setStyle(ButtonStyle.Link).setURL(converted.rawlink),
+    );
+
+    await message.reply({
+      embeds: [embed],
+      components: [row],
+      allowedMentions: { repliedUser: false },
+    });
+  } catch (error) {
+    console.error("Blad konwersji:", error);
+  }
+});
+
+client.login(BOT_TOKEN);
