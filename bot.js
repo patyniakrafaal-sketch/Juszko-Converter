@@ -17,18 +17,22 @@ const AGENT_META = {
   usfans: {
     label: "USFans",
     iconUrl: "https://www.usfans.com/favicon.ico",
+    buttonEmoji: "🟡",
   },
   kakobuy: {
     label: "Kakobuy",
     iconUrl: "https://www.kakobuy.com/favicon.ico",
+    buttonEmoji: "🟢",
   },
   litbuy: {
     label: "LitBuy",
     iconUrl: "https://litbuy.com/favicon.ico",
+    buttonEmoji: "🔥",
   },
   rawlink: {
     label: "Raw Link",
     iconUrl: "https://www.google.com/s2/favicons?domain=taobao.com&sz=64",
+    buttonEmoji: "🔗",
   },
 };
 
@@ -242,10 +246,26 @@ client.on("messageCreate", async (message) => {
     );
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel("USFans").setStyle(ButtonStyle.Link).setURL(converted.usfans),
-      new ButtonBuilder().setLabel("Kakobuy").setStyle(ButtonStyle.Link).setURL(converted.kakobuy),
-      new ButtonBuilder().setLabel("LitBuy").setStyle(ButtonStyle.Link).setURL(converted.litbuy),
-      new ButtonBuilder().setLabel("Raw Link").setStyle(ButtonStyle.Link).setURL(converted.rawlink),
+      new ButtonBuilder()
+        .setLabel("USFans")
+        .setEmoji(AGENT_META.usfans.buttonEmoji)
+        .setStyle(ButtonStyle.Link)
+        .setURL(converted.usfans),
+      new ButtonBuilder()
+        .setLabel("Kakobuy")
+        .setEmoji(AGENT_META.kakobuy.buttonEmoji)
+        .setStyle(ButtonStyle.Link)
+        .setURL(converted.kakobuy),
+      new ButtonBuilder()
+        .setLabel("LitBuy")
+        .setEmoji(AGENT_META.litbuy.buttonEmoji)
+        .setStyle(ButtonStyle.Link)
+        .setURL(converted.litbuy),
+      new ButtonBuilder()
+        .setLabel("Raw Link")
+        .setEmoji(AGENT_META.rawlink.buttonEmoji)
+        .setStyle(ButtonStyle.Link)
+        .setURL(converted.rawlink),
     );
 
     await message.reply({
