@@ -11,8 +11,26 @@ import {
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN?.trim() || "";
 const GUILD_ID = process.env.DISCORD_GUILD_ID?.trim() || "1386023301092081925";
-const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "1396866948687462482";
+const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "";
 const AFFCODE = process.env.AFFCODE?.trim() || "juszko20";
+const AGENT_META = {
+  usfans: {
+    label: "USFans",
+    iconUrl: "https://www.usfans.com/favicon.ico",
+  },
+  kakobuy: {
+    label: "Kakobuy",
+    iconUrl: "https://www.kakobuy.com/favicon.ico",
+  },
+  litbuy: {
+    label: "LitBuy",
+    iconUrl: "https://litbuy.com/favicon.ico",
+  },
+  rawlink: {
+    label: "Raw Link",
+    iconUrl: "https://www.google.com/s2/favicons?domain=taobao.com&sz=64",
+  },
+};
 
 if (!BOT_TOKEN) {
   throw new Error("Brak DISCORD_BOT_TOKEN w .env");
@@ -63,6 +81,32 @@ function buildCanonicalProductUrl(platform, id) {
   if (platform === "weidian") return `https://weidian.com/item.html?itemID=${id}`;
   if (platform === "taobao") return `https://item.taobao.com/item.htm?id=${id}`;
   return id;
+}
+
+function buildUsfansProductUrl(parsed) {
+  if (!parsed.id) {
+    const enc = encodeURIComponent(parsed.rawUrl);
+    return `https://www.usfans.com/item/details?url=${enc}`;
+  }
+
+  if (parsed.platform === "1688") {
+    return `https://www.usfans.com/product/1/${parsed.id}`;
+  }
+
+  return `https://www.usfans.com/product/3/${parsed.id}`;
+}
+
+function buildLitbuyProductUrl(parsed) {
+  if (!parsed.id) {
+    const enc = encodeURIComponent(parsed.rawUrl);
+    return `https://litbuy.com/item/details?url=${enc}`;
+  }
+
+  if (parsed.platform === "1688") {
+    return `https://litbuy.com/products/details?channel=1688&id=${parsed.id}`;
+  }
+
+  return `https://litbuy.com/products/details?channel=2&spuNo=${parsed.id}`;
 }
 
 function parseSourceLink(rawUrl) {
@@ -132,8 +176,8 @@ function buildAgentUrl(agent, parsed) {
 
   if (agent === "rawlink") return appendAffCode(parsed.rawUrl);
   if (agent === "kakobuy") return appendAffCode(`https://www.kakobuy.com/item/details?url=${enc}`);
-  if (agent === "litbuy") return appendAffCode(`https://www.litbuy.com/item/details?url=${enc}`);
-  if (agent === "usfans") return appendAffCode(`https://www.usfans.io/item/details?url=${enc}`);
+  if (agent === "litbuy") return appendAffCode(buildLitbuyProductUrl(parsed));
+  if (agent === "usfans") return appendAffCode(buildUsfansProductUrl(parsed));
   return parsed.rawUrl;
 }
 
@@ -154,15 +198,17 @@ function extractFirstUrl(content) {
   return match ? match[0] : null;
 }
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`Bot zalogowany jako ${client.user?.tag}`);
-  console.log(`Nasłuch: guild=${GUILD_ID}, channel=${CHANNEL_ID}`);
+  console.log(
+    `Nasluch: guild=${GUILD_ID}, channel=${CHANNEL_ID || "ALL_CHANNELS"}`
+  );
 });
 
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (!message.guild || message.guild.id !== GUILD_ID) return;
-  if (message.channel.id !== CHANNEL_ID) return;
+  if (CHANNEL_ID && message.channel.id !== CHANNEL_ID) return;
 
   const originalUrl = extractFirstUrl(message.content);
   if (!originalUrl) return;
@@ -173,11 +219,27 @@ client.on("messageCreate", async (message) => {
     const embed = new EmbedBuilder()
       .setColor(0x2b2d31)
       .setTitle("Twoje przekonwertowane linki!")
-      .setDescription("Kliknij przycisk poniżej, żeby otworzyć wybrany link.")
+      .setDescription("Kliknij przycisk ponizej, zeby otworzyc wybrany link.")
       .addFields({
         name: "Oryginalny link",
         value: originalUrl.length > 1024 ? `${originalUrl.slice(0, 1000)}...` : originalUrl,
       });
+
+    const agentEmbeds = [
+      { key: "usfans", url: converted.usfans, color: 0xf59e0b },
+      { key: "kakobuy", url: converted.kakobuy, color: 0x22c55e },
+      { key: "litbuy", url: converted.litbuy, color: 0xef4444 },
+      { key: "rawlink", url: converted.rawlink, color: 0x64748b },
+    ].map(({ key, url, color }) =>
+      new EmbedBuilder()
+        .setColor(color)
+        .setAuthor({
+          name: AGENT_META[key].label,
+          iconURL: AGENT_META[key].iconUrl,
+          url,
+        })
+        .setDescription(`[Otworz ${AGENT_META[key].label}](${url})`)
+    );
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setLabel("USFans").setStyle(ButtonStyle.Link).setURL(converted.usfans),
@@ -187,7 +249,7 @@ client.on("messageCreate", async (message) => {
     );
 
     await message.reply({
-      embeds: [embed],
+      embeds: [embed, ...agentEmbeds],
       components: [row],
       allowedMentions: { repliedUser: false },
     });
@@ -196,4 +258,12 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-client.login(BOT_TOKEN);
+client.login(BOT_TOKEN).catch((error) => {
+  console.error("Nie udalo sie zalogowac bota:", error);
+
+  if (String(error?.message || error).includes("disallowed intents")) {
+    console.error(
+      "Wlacz Message Content Intent w Discord Developer Portal: Applications > Your Bot > Bot > Privileged Gateway Intents."
+    );
+  }
+});

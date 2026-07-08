@@ -1,18 +1,18 @@
 # Juszko Discord Converter Bot
 
-Bot nasłuchuje tylko na:
+Bot nasluchuje tylko na:
 
 - serwerze `1386023301092081925`
 - kanale `1396866948687462482`
 
-Gdy ktoś wrzuci link, bot odpisuje wiadomością z przyciskami:
+Gdy ktos wrzuci link, bot odpisuje wiadomoscia z przyciskami:
 
 - `USFans`
 - `Kakobuy`
 - `LitBuy`
 - `Raw Link`
 
-Każdy link dostaje `affcode=juszko20`.
+Kazdy link dostaje `affcode=juszko20`.
 
 ## Start
 
@@ -30,7 +30,8 @@ npm install
 npm start
 ```
 
-## Ważne
+## Wazne
 
-- Bot musi być dodany na serwer.
-- W panelu Discord Developer Portal trzeba mieć włączony `Message Content Intent`.
+- Bot musi byc dodany na serwer.
+- W panelu Discord Developer Portal trzeba miec wlaczony `Message Content Intent`.
+- Sciezka: `Applications > Your Bot > Bot > Privileged Gateway Intents > Message Content Intent`.
