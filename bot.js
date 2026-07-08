@@ -13,26 +13,30 @@ const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN?.trim() || "";
 const GUILD_ID = process.env.DISCORD_GUILD_ID?.trim() || "1386023301092081925";
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "";
 const AFFCODE = process.env.AFFCODE?.trim() || "juszko20";
+const USFANS_EMOJI_ID = process.env.USFANS_EMOJI_ID?.trim() || "";
+const KAKOBUY_EMOJI_ID = process.env.KAKOBUY_EMOJI_ID?.trim() || "";
+const LITBUY_EMOJI_ID = process.env.LITBUY_EMOJI_ID?.trim() || "";
+const RAWLINK_EMOJI_ID = process.env.RAWLINK_EMOJI_ID?.trim() || "";
 const AGENT_META = {
   usfans: {
     label: "USFans",
     iconUrl: "https://www.usfans.com/favicon.ico",
-    buttonEmoji: "🟡",
+    buttonEmoji: USFANS_EMOJI_ID ? { id: USFANS_EMOJI_ID, name: "usfans" } : "🟡",
   },
   kakobuy: {
     label: "Kakobuy",
     iconUrl: "https://www.kakobuy.com/favicon.ico",
-    buttonEmoji: "🟢",
+    buttonEmoji: KAKOBUY_EMOJI_ID ? { id: KAKOBUY_EMOJI_ID, name: "kakobuy" } : "🟢",
   },
   litbuy: {
     label: "LitBuy",
     iconUrl: "https://litbuy.com/favicon.ico",
-    buttonEmoji: "🔥",
+    buttonEmoji: LITBUY_EMOJI_ID ? { id: LITBUY_EMOJI_ID, name: "litbuy" } : "🔥",
   },
   rawlink: {
     label: "Raw Link",
     iconUrl: "https://www.google.com/s2/favicons?domain=taobao.com&sz=64",
-    buttonEmoji: "🔗",
+    buttonEmoji: RAWLINK_EMOJI_ID ? { id: RAWLINK_EMOJI_ID, name: "rawlink" } : "🔗",
   },
 };
 
