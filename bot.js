@@ -84,6 +84,36 @@ function extractRawLink(input) {
   return current;
 }
 
+function isResolvableShortAgentLink(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.replace("www.", "");
+    return host === "ikako.vip" || host === "sl.kakobuy.com";
+  } catch {
+    return false;
+  }
+}
+
+async function resolveShortAgentLink(rawUrl) {
+  if (!isResolvableShortAgentLink(rawUrl)) {
+    return rawUrl;
+  }
+
+  try {
+    const response = await fetch(rawUrl, {
+      redirect: "follow",
+      headers: {
+        "user-agent": "Mozilla/5.0 (compatible; JuszkoConverterBot/1.0)",
+      },
+    });
+
+    return response.url || rawUrl;
+  } catch (error) {
+    console.error("Nie udalo sie rozwinac shortlinku agenta:", rawUrl, error);
+    return rawUrl;
+  }
+}
+
 function buildCanonicalProductUrl(platform, id) {
   if (platform === "1688") return `https://detail.1688.com/offer/${id}.html`;
   if (platform === "weidian") return `https://weidian.com/item.html?itemID=${id}`;
@@ -189,8 +219,9 @@ function buildAgentUrl(agent, parsed) {
   return parsed.rawUrl;
 }
 
-function convertAllLinks(input) {
-  const rawUrl = extractRawLink(input);
+async function convertAllLinks(input) {
+  const extractedUrl = extractRawLink(input);
+  const rawUrl = extractRawLink(await resolveShortAgentLink(extractedUrl));
   const parsed = parseSourceLink(rawUrl);
 
   return {
@@ -235,7 +266,7 @@ client.on("messageCreate", async (message) => {
   if (!originalUrl) return;
 
   try {
-    const converted = convertAllLinks(originalUrl);
+    const converted = await convertAllLinks(originalUrl);
 
     const embed = new EmbedBuilder()
       .setColor(0x2b2d31)
