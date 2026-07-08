@@ -233,22 +233,6 @@ client.on("messageCreate", async (message) => {
         value: originalUrl.length > 1024 ? `${originalUrl.slice(0, 1000)}...` : originalUrl,
       });
 
-    const agentEmbeds = [
-      { key: "usfans", url: converted.usfans, color: 0xf59e0b },
-      { key: "kakobuy", url: converted.kakobuy, color: 0x22c55e },
-      { key: "litbuy", url: converted.litbuy, color: 0xef4444 },
-      { key: "rawlink", url: converted.rawlink, color: 0x64748b },
-    ].map(({ key, url, color }) =>
-      new EmbedBuilder()
-        .setColor(color)
-        .setAuthor({
-          name: AGENT_META[key].label,
-          iconURL: AGENT_META[key].iconUrl,
-          url,
-        })
-        .setDescription(`[Otworz ${AGENT_META[key].label}](${url})`)
-    );
-
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setLabel("USFans")
@@ -273,7 +257,7 @@ client.on("messageCreate", async (message) => {
     );
 
     await message.reply({
-      embeds: [embed, ...agentEmbeds],
+      embeds: [embed],
       components: [row],
       allowedMentions: { repliedUser: false },
     });
