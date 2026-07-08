@@ -21,22 +21,22 @@ const AGENT_META = {
   usfans: {
     label: "USFans",
     iconUrl: "https://www.usfans.com/favicon.ico",
-    buttonEmoji: USFANS_EMOJI_ID ? { id: USFANS_EMOJI_ID, name: "usfans" } : "🟡",
+    buttonEmoji: USFANS_EMOJI_ID ? { id: USFANS_EMOJI_ID, name: "usfans" } : null,
   },
   kakobuy: {
     label: "Kakobuy",
     iconUrl: "https://www.kakobuy.com/favicon.ico",
-    buttonEmoji: KAKOBUY_EMOJI_ID ? { id: KAKOBUY_EMOJI_ID, name: "kakobuy" } : "🟢",
+    buttonEmoji: KAKOBUY_EMOJI_ID ? { id: KAKOBUY_EMOJI_ID, name: "kakobuy" } : null,
   },
   litbuy: {
     label: "LitBuy",
     iconUrl: "https://litbuy.com/favicon.ico",
-    buttonEmoji: LITBUY_EMOJI_ID ? { id: LITBUY_EMOJI_ID, name: "litbuy" } : "🔥",
+    buttonEmoji: LITBUY_EMOJI_ID ? { id: LITBUY_EMOJI_ID, name: "litbuy" } : null,
   },
   rawlink: {
     label: "Raw Link",
     iconUrl: "https://www.google.com/s2/favicons?domain=taobao.com&sz=64",
-    buttonEmoji: RAWLINK_EMOJI_ID ? { id: RAWLINK_EMOJI_ID, name: "rawlink" } : "🔗",
+    buttonEmoji: RAWLINK_EMOJI_ID ? { id: RAWLINK_EMOJI_ID, name: "rawlink" } : null,
   },
 };
 
@@ -206,6 +206,19 @@ function extractFirstUrl(content) {
   return match ? match[0] : null;
 }
 
+function createAgentButton(label, url, emoji) {
+  const button = new ButtonBuilder()
+    .setLabel(label)
+    .setStyle(ButtonStyle.Link)
+    .setURL(url);
+
+  if (emoji) {
+    button.setEmoji(emoji);
+  }
+
+  return button;
+}
+
 client.once("clientReady", () => {
   console.log(`Bot zalogowany jako ${client.user?.tag}`);
   console.log(
@@ -234,26 +247,10 @@ client.on("messageCreate", async (message) => {
       });
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setLabel("USFans")
-        .setEmoji(AGENT_META.usfans.buttonEmoji)
-        .setStyle(ButtonStyle.Link)
-        .setURL(converted.usfans),
-      new ButtonBuilder()
-        .setLabel("Kakobuy")
-        .setEmoji(AGENT_META.kakobuy.buttonEmoji)
-        .setStyle(ButtonStyle.Link)
-        .setURL(converted.kakobuy),
-      new ButtonBuilder()
-        .setLabel("LitBuy")
-        .setEmoji(AGENT_META.litbuy.buttonEmoji)
-        .setStyle(ButtonStyle.Link)
-        .setURL(converted.litbuy),
-      new ButtonBuilder()
-        .setLabel("Raw Link")
-        .setEmoji(AGENT_META.rawlink.buttonEmoji)
-        .setStyle(ButtonStyle.Link)
-        .setURL(converted.rawlink),
+      createAgentButton("USFans", converted.usfans, AGENT_META.usfans.buttonEmoji),
+      createAgentButton("Kakobuy", converted.kakobuy, AGENT_META.kakobuy.buttonEmoji),
+      createAgentButton("LitBuy", converted.litbuy, AGENT_META.litbuy.buttonEmoji),
+      createAgentButton("Raw Link", converted.rawlink, AGENT_META.rawlink.buttonEmoji),
     );
 
     await message.reply({
