@@ -47,6 +47,18 @@ z innego serwera, Discord pokaże surowy tekst `<:coin:123...>` zamiast obrazka.
 ## Dlaczego tak wyglądają
 
 Discord renderuje emotki w około 22 px w wiadomości. Wszystko cieńsze niż ~8 px w tym
-kartonie 128 px znika przy tej skali, dlatego kształty są grube i płaskie, bez cieni
-i gradientów. Klucz jest pionowy, a nie po skosie, bo obrócony rozpadał się przy małym
-rozmiarze na trzy nieczytelne plamki. Paleta jest ta sama co kolory embedów w `bot.js`.
+kartonie 128 px znika przy tej skali, dlatego kształty są grube, a głębia pochodzi
+z gradientów i cieni biegnących przez cały kształt, a nie z drobnych detali.
+
+Kształt to zaokrąglony kwadrat, nie koło — wypełnia kwadratowe pole emotki znacznie
+lepiej, dlatego tak wygląda każda nowoczesna ikona aplikacji. Przy 22 px ta dodatkowa
+powierzchnia robi całą różnicę.
+
+Kolory, promienie zaokrągleń i cienie pochodzą z systemu projektowego **Tailwind CSS**
+(amber-400/500/600, emerald, red, indigo, slate; rounded-3xl). Sam Tailwind nie działa
+na emotkach — to obrazki PNG, nie HTML, więc żadna klasa CSS się do nich nie stosuje —
+ale jego palety i skale są tym, co sprawia, że zestaw wygląda spójnie zamiast
+ręcznie mieszanego.
+
+Klucz jest pionowy, a nie po skosie, bo obrócony rozpadał się przy małym rozmiarze
+na trzy nieczytelne plamki.

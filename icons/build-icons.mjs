@@ -2,9 +2,15 @@
  * Renders the bot's icon set to PNGs that can be uploaded as Discord server emoji.
  *
  * Discord shows emoji at roughly 22px inline and 48px in a reaction, so these are drawn
- * as bold flat shapes with no fine detail - anything thinner than ~8px in this 128px box
+ * as bold shapes with no fine detail - anything thinner than ~8px in this 128px box
  * disappears at display size. Output is 128x128 with transparency, well under the 256KB
  * per-emoji limit.
+ *
+ * On Tailwind: an emoji is a raster image, so no CSS of any kind runs on it - there is
+ * nothing for a class to attach to. What IS borrowed here is Tailwind's design system,
+ * which is the part that actually decides whether something looks professional: its
+ * colour ramps (a 400/500/600/900 step per hue rather than hand-mixed shades), its
+ * radius scale, and its elevation model. Every value below is a Tailwind token.
  *
  *   node icons/build-icons.mjs
  */
@@ -16,154 +22,201 @@ import sharp from "sharp";
 const OUT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SIZE = 128;
 
-// One palette for the whole set, matching the embed colours in bot.js.
-const C = {
-  brand: "#F5C518",
-  brandDark: "#B8900A",
-  brandInk: "#5C4400",
-  success: "#2ECC71",
-  successDark: "#1E8E4E",
-  danger: "#E74C3C",
-  dangerDark: "#A93226",
-  info: "#5865F2",
-  infoDark: "#3C45A5",
-  neutral: "#B9BBBE",
-  neutralDark: "#7E8287",
+// Tailwind's palette, exact values. Using a real ramp is what stops the set looking
+// hand-mixed: light/base/dark of one hue are guaranteed to sit in tune with each other.
+const T = {
+  amber400: "#FBBF24",
+  amber500: "#F59E0B",
+  amber600: "#D97706",
+  amber900: "#78350F",
+  emerald400: "#34D399",
+  emerald500: "#10B981",
+  emerald600: "#059669",
+  red400: "#F87171",
+  red500: "#EF4444",
+  red600: "#DC2626",
+  indigo400: "#818CF8",
+  indigo500: "#6366F1",
+  indigo600: "#4F46E5",
+  slate300: "#CBD5E1",
+  slate400: "#94A3B8",
+  slate500: "#64748B",
+  slate900: "#0F172A",
   white: "#FFFFFF",
 };
 
+// Tailwind's rounded-3xl (1.5rem) scaled from a 96px tile to this 128px box. A squircle
+// rather than a circle: it fills the square emoji slot far better, which is why every
+// modern app icon is shaped this way, and at 22px that extra area is the whole game.
+const RADIUS = 32;
+const INSET = 8; // breathing room so the shadow is not clipped
+
 /**
- * Gradients and a soft top highlight are what separate these from flat clip-art. They
- * survive the downscale because they run across the whole shape rather than sitting in
- * small details - at 22px the eye still reads the light direction even when it cannot
- * resolve anything else.
+ * One badge tile: gradient body, hairline top edge, gloss over the upper half, and a
+ * soft drop shadow. This is Tailwind's elevation idea - a tinted shadow in the object's
+ * own hue reads as depth, a grey one reads as dirt.
  */
-const defs = (id, from, to) =>
-  `<defs>` +
-  `<linearGradient id="g${id}" x1="0" y1="0" x2="0" y2="1">` +
-  `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/>` +
-  `</linearGradient>` +
-  // Glass highlight: a bright wash over the upper half, fading to nothing by the middle.
-  `<linearGradient id="s${id}" x1="0" y1="0" x2="0" y2="1">` +
-  `<stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/>` +
-  `<stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>` +
-  `</linearGradient>` +
-  `</defs>`;
+function tile(id, light, base, dark) {
+  const x = INSET;
+  const size = SIZE - INSET * 2;
+
+  return (
+    `<defs>` +
+    `<linearGradient id="b${id}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${light}"/>` +
+    `<stop offset="0.52" stop-color="${base}"/>` +
+    `<stop offset="1" stop-color="${dark}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="h${id}" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="${T.white}" stop-opacity="0.42"/>` +
+    `<stop offset="1" stop-color="${T.white}" stop-opacity="0"/>` +
+    `</linearGradient>` +
+    `<filter id="d${id}" x="-30%" y="-30%" width="160%" height="160%">` +
+    `<feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="${dark}" flood-opacity="0.55"/>` +
+    `</filter>` +
+    `</defs>` +
+    `<rect x="${x}" y="${x}" width="${size}" height="${size}" rx="${RADIUS}"` +
+    ` fill="url(#b${id})" filter="url(#d${id})"/>` +
+    // Hairline of lighter colour along the very top edge - the detail that reads as a
+    // physical bevel rather than a printed rectangle.
+    `<rect x="${x}" y="${x}" width="${size}" height="${size}" rx="${RADIUS}"` +
+    ` fill="none" stroke="${light}" stroke-opacity="0.85" stroke-width="2"/>` +
+    `<rect x="${x + 2}" y="${x + 2}" width="${size - 4}" height="${size / 2}" rx="${RADIUS - 4}"` +
+    ` fill="url(#h${id})"/>`
+  );
+}
 
 const svg = (body) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">${body}</svg>`;
 
-/**
- * Base of every badge-style icon: a darker rim, a vertical gradient body and a highlight
- * arc across the top, so the disc reads as a raised token instead of a flat circle.
- */
-const disc = (id, fill, ring) =>
-  `${defs(id, fill, ring)}` +
-  `<circle cx="64" cy="64" r="58" fill="${ring}"/>` +
-  `<circle cx="64" cy="64" r="50" fill="url(#g${id})"/>` +
-  `<ellipse cx="64" cy="44" rx="42" ry="30" fill="url(#s${id})"/>`;
+/** White glyph with a soft shadow so it never floats flat on the tile. */
+const glyph = (body) =>
+  `<g filter="url(#gs)" fill="none" stroke="${T.white}" stroke-width="11"` +
+  ` stroke-linecap="round" stroke-linejoin="round">${body}</g>`;
+
+// The region is in user space, not percentages of the bounding box. A horizontal rule
+// like the minus glyph has a zero-height bbox, so a percentage region collapsed to
+// nothing and the glyph vanished entirely.
+const GLYPH_SHADOW =
+  `<defs><filter id="gs" filterUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">` +
+  `<feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="${T.slate900}" flood-opacity="0.28"/>` +
+  `</filter></defs>`;
+
+const AMBER = ["am", T.amber400, T.amber500, T.amber600];
+const EMERALD = ["em", T.emerald400, T.emerald500, T.emerald600];
+const RED = ["rd", T.red400, T.red500, T.red600];
+const INDIGO = ["in", T.indigo400, T.indigo500, T.indigo600];
+const SLATE = ["sl", T.slate300, T.slate400, T.slate500];
 
 const ICONS = {
   // --- currency ---------------------------------------------------------
   coin: svg(
-    `${disc("br", C.brand, C.brandDark)}` +
-      `<text x="64" y="82" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"` +
-      ` font-size="46" font-weight="900" fill="${C.brandInk}">JC</text>`,
+    tile(...AMBER) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<circle cx="64" cy="64" r="34" fill="${T.amber900}" fill-opacity="0.22"/>` +
+      `<text x="64" y="79" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"` +
+      ` font-size="42" font-weight="900" fill="${T.white}">JC</text>` +
+      `</g>`,
   ),
 
   wallet: svg(
-    `${defs("wa", C.brand, C.brandDark)}` +
-      `<rect x="12" y="30" width="104" height="72" rx="14" fill="${C.brandDark}"/>` +
-      `<rect x="12" y="30" width="104" height="60" rx="14" fill="url(#gwa)"/>` +
-      `<rect x="12" y="30" width="104" height="34" rx="14" fill="url(#swa)"/>` +
-      `<rect x="74" y="56" width="42" height="26" rx="10" fill="${C.brandInk}"/>` +
-      `<circle cx="92" cy="69" r="7" fill="${C.brand}"/>`,
+    tile(...AMBER) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<rect x="30" y="42" width="68" height="46" rx="10" fill="${T.white}"/>` +
+      `<rect x="30" y="42" width="68" height="14" rx="7" fill="${T.white}" fill-opacity="0.75"/>` +
+      `<rect x="72" y="58" width="30" height="18" rx="9" fill="${T.amber900}"/>` +
+      `<circle cx="87" cy="67" r="5" fill="${T.white}"/>` +
+      `</g>`,
   ),
 
   // --- rewards ----------------------------------------------------------
   gift: svg(
-    `${defs("gi", C.brand, C.brandDark)}` +
-      `<rect x="22" y="68" width="84" height="46" rx="8" fill="${C.brandDark}"/>` +
-      `<rect x="14" y="46" width="100" height="22" rx="6" fill="url(#ggi)"/>` +
-      `<rect x="56" y="46" width="16" height="68" fill="${C.brandInk}"/>` +
-      // Two rounded loops rather than pointed paths - at emoji size a sharp bow
-      // collapses into a blob.
-      `<ellipse cx="44" cy="32" rx="18" ry="14" fill="url(#ggi)"/>` +
-      `<ellipse cx="84" cy="32" rx="18" ry="14" fill="url(#ggi)"/>` +
-      `<circle cx="64" cy="38" r="11" fill="${C.brandDark}"/>` +
-      `<rect x="14" y="46" width="100" height="12" rx="6" fill="url(#sgi)"/>`,
+    tile(...AMBER) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<rect x="30" y="58" width="68" height="16" rx="6" fill="${T.white}"/>` +
+      `<rect x="36" y="74" width="56" height="32" rx="7" fill="${T.white}" fill-opacity="0.92"/>` +
+      `<rect x="58" y="58" width="12" height="48" fill="${T.amber900}" fill-opacity="0.55"/>` +
+      `<ellipse cx="48" cy="44" rx="15" ry="12" fill="${T.white}"/>` +
+      `<ellipse cx="80" cy="44" rx="15" ry="12" fill="${T.white}"/>` +
+      `<circle cx="64" cy="49" r="9" fill="${T.amber900}" fill-opacity="0.55"/>` +
+      `</g>`,
   ),
 
   pending: svg(
-    `${disc("br", C.brand, C.brandDark)}` +
-      `<rect x="58" y="30" width="12" height="38" rx="6" fill="${C.brandInk}"/>` +
-      `<rect x="62" y="58" width="30" height="12" rx="6" fill="${C.brandInk}"/>` +
-      // Hub, so the two hands read as one clock instead of a bent line.
-      `<circle cx="64" cy="64" r="8" fill="${C.brandInk}"/>`,
+    tile(...AMBER) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<circle cx="64" cy="64" r="32" fill="none" stroke="${T.white}" stroke-width="9"/>` +
+      `<path d="M64 44v20h16" fill="none" stroke="${T.white}" stroke-width="9"` +
+      ` stroke-linecap="round" stroke-linejoin="round"/>` +
+      `</g>`,
   ),
 
-  done: svg(
-    `${disc("su", C.success, C.successDark)}` +
-      `<path d="M40 66l16 16 32-34" fill="none" stroke="${C.white}" stroke-width="14"` +
-      ` stroke-linecap="round" stroke-linejoin="round"/>`,
-  ),
+  done: svg(tile(...EMERALD) + GLYPH_SHADOW + glyph(`<path d="M42 66l15 15 30-32"/>`)),
 
   cancelled: svg(
-    `${disc("da", C.danger, C.dangerDark)}` +
-      `<rect x="36" y="57" width="56" height="14" rx="7" fill="${C.white}"` +
-      ` transform="rotate(-45 64 64)"/>` +
-      `<circle cx="64" cy="64" r="34" fill="none" stroke="${C.white}" stroke-width="12"/>`,
+    tile(...RED) +
+      GLYPH_SHADOW +
+      glyph(`<circle cx="64" cy="64" r="28"/><path d="M44 84L84 44"/>`),
   ),
 
   // --- feedback ---------------------------------------------------------
   error: svg(
-    `${disc("da", C.danger, C.dangerDark)}` +
-      `<rect x="56" y="30" width="16" height="44" rx="8" fill="${C.white}"/>` +
-      `<circle cx="64" cy="92" r="10" fill="${C.white}"/>`,
+    tile(...RED) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<rect x="57" y="34" width="14" height="42" rx="7" fill="${T.white}"/>` +
+      `<circle cx="64" cy="90" r="9" fill="${T.white}"/>` +
+      `</g>`,
   ),
 
   info: svg(
-    `${disc("in", C.info, C.infoDark)}` +
-      `<circle cx="64" cy="38" r="10" fill="${C.white}"/>` +
-      `<rect x="56" y="54" width="16" height="44" rx="8" fill="${C.white}"/>`,
+    tile(...INDIGO) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<circle cx="64" cy="40" r="9" fill="${T.white}"/>` +
+      `<rect x="57" y="55" width="14" height="41" rx="7" fill="${T.white}"/>` +
+      `</g>`,
   ),
 
-  plus: svg(
-    `${disc("su", C.success, C.successDark)}` +
-      `<rect x="56" y="34" width="16" height="60" rx="8" fill="${C.white}"/>` +
-      `<rect x="34" y="56" width="60" height="16" rx="8" fill="${C.white}"/>`,
-  ),
+  plus: svg(tile(...EMERALD) + GLYPH_SHADOW + glyph(`<path d="M64 38v52M38 64h52"/>`)),
 
-  minus: svg(
-    `${disc("da", C.danger, C.dangerDark)}` + `<rect x="34" y="56" width="60" height="16" rx="8" fill="${C.white}"/>`,
-  ),
+  minus: svg(tile(...RED) + GLYPH_SHADOW + glyph(`<path d="M38 64h52"/>`)),
 
   // --- people and access ------------------------------------------------
   user: svg(
-    `${disc("ne", C.neutral, C.neutralDark)}` +
-      `<circle cx="64" cy="52" r="18" fill="${C.white}"/>` +
-      `<path d="M30 104a34 34 0 0 1 68 0z" fill="${C.white}"/>`,
+    tile(...SLATE) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<circle cx="64" cy="52" r="17" fill="${T.white}"/>` +
+      `<path d="M33 100a31 31 0 0 1 62 0z" fill="${T.white}"/>` +
+      `</g>`,
   ),
 
   staff: svg(
-    `${defs("st", C.info, C.infoDark)}` +
-      `<path d="M64 10l44 18v34c0 28-19 47-44 56-25-9-44-28-44-56V28z" fill="${C.infoDark}"/>` +
-      `<path d="M64 22l33 13v27c0 21-14 35-33 43-19-8-33-22-33-43V35z" fill="url(#gst)"/>` +
-      `<path d="M64 22l33 13v14H31V35z" fill="url(#sst)"/>` +
-      `<path d="M46 66l12 12 24-26" fill="none" stroke="${C.white}" stroke-width="12"` +
-      ` stroke-linecap="round" stroke-linejoin="round"/>`,
+    tile(...INDIGO) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<path d="M64 28l30 12v24c0 19-13 32-30 39-17-7-30-20-30-39V40z" fill="${T.white}"/>` +
+      `<path d="M52 66l9 9 18-20" fill="none" stroke="${T.indigo600}" stroke-width="10"` +
+      ` stroke-linecap="round" stroke-linejoin="round"/>` +
+      `</g>`,
   ),
 
   // Drawn upright rather than on the usual diagonal: at 22px a rotated key reads as
   // three unrelated smudges, because the teeth stop touching the shaft.
   code: svg(
-    `${defs("co", C.brand, C.brandDark)}` +
-      `<circle cx="64" cy="40" r="30" fill="url(#gco)"/>` +
-      `<ellipse cx="64" cy="28" rx="24" ry="16" fill="url(#sco)"/>` +
-      `<circle cx="64" cy="40" r="12" fill="none" stroke="${C.brandInk}" stroke-width="10"/>` +
-      `<rect x="55" y="62" width="18" height="54" rx="6" fill="url(#gco)"/>` +
-      `<rect x="73" y="82" width="20" height="13" rx="5" fill="${C.brandDark}"/>` +
-      `<rect x="73" y="102" width="14" height="13" rx="5" fill="${C.brandDark}"/>`,
+    tile(...AMBER) +
+      GLYPH_SHADOW +
+      `<g filter="url(#gs)">` +
+      `<circle cx="64" cy="48" r="22" fill="none" stroke="${T.white}" stroke-width="11"/>` +
+      `<rect x="57" y="66" width="14" height="36" rx="7" fill="${T.white}"/>` +
+      `<rect x="71" y="76" width="16" height="11" rx="5" fill="${T.white}"/>` +
+      `<rect x="71" y="91" width="11" height="11" rx="5" fill="${T.white}"/>` +
+      `</g>`,
   ),
 };
 
@@ -171,9 +224,8 @@ await mkdir(OUT_DIR, { recursive: true });
 
 const report = [];
 for (const [name, markup] of Object.entries(ICONS)) {
-  const file = path.join(OUT_DIR, `${name}.png`);
   const png = await sharp(Buffer.from(markup)).resize(SIZE, SIZE).png({ compressionLevel: 9 }).toBuffer();
-  await writeFile(file, png);
+  await writeFile(path.join(OUT_DIR, `${name}.png`), png);
   await writeFile(path.join(OUT_DIR, `${name}.svg`), markup);
   report.push({ name, kb: +(png.length / 1024).toFixed(1) });
 }
