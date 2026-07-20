@@ -7,11 +7,18 @@ import {
   EmbedBuilder,
   GatewayIntentBits,
   Partials,
+  REST,
+  Routes,
+  SlashCommandBuilder,
 } from "discord.js";
 
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN?.trim() || "";
 const GUILD_ID = process.env.DISCORD_GUILD_ID?.trim() || "1386023301092081925";
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "";
+// Reward redemption: the site owns the orders, this bot is the counter people walk up to.
+const SITE_URL = (process.env.SITE_URL?.trim() || "https://juszkoreps-czjp.onrender.com").replace(/\/+$/, "");
+const SITE_API_KEY = process.env.INTERNAL_API_KEY?.trim() || "";
+const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID?.trim() || process.env.DISCORD_ADMIN_ROLE_ID?.trim() || "";
 const AFFCODE = process.env.AFFCODE?.trim() || "juszko20";
 const USFANS_EMOJI_ID = process.env.USFANS_EMOJI_ID?.trim() || "";
 const KAKOBUY_EMOJI_ID = process.env.KAKOBUY_EMOJI_ID?.trim() || "";
@@ -250,11 +257,211 @@ function createAgentButton(label, url, emoji) {
   return button;
 }
 
-client.once("clientReady", () => {
+const rewardCommands = [
+  new SlashCommandBuilder()
+    .setName("nagroda")
+    .setDescription("Odbierz nagrode kupiona za Juszko Coins")
+    .addStringOption((option) =>
+      option.setName("kod").setDescription("Kod odbioru ze strony, np. JR-A7K9-M2P4").setRequired(true),
+    ),
+  new SlashCommandBuilder()
+    .setName("nagrodazrealizowana")
+    .setDescription("Oznacz nagrode jako wydana (tylko obsluga)")
+    .addStringOption((option) => option.setName("kod").setDescription("Kod odbioru").setRequired(true))
+    .addStringOption((option) => option.setName("notatka").setDescription("Np. wydany kod vouchera").setRequired(false)),
+  new SlashCommandBuilder()
+    .setName("nagrodaanuluj")
+    .setDescription("Anuluj zamowienie i zwroc coiny (tylko obsluga)")
+    .addStringOption((option) => option.setName("kod").setDescription("Kod odbioru").setRequired(true)),
+].map((command) => command.toJSON());
+
+async function registerRewardCommands() {
+  if (!SITE_API_KEY) {
+    console.warn("[nagrody] Brak INTERNAL_API_KEY w .env - komendy nagrod NIE zostaly zarejestrowane.");
+    return;
+  }
+
+  try {
+    const rest = new REST({ version: "10" }).setToken(BOT_TOKEN);
+    // Guild-scoped: appears instantly instead of the ~1h global propagation.
+    await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), { body: rewardCommands });
+    console.log("[nagrody] Komendy zarejestrowane: /nagroda, /nagrodazrealizowana, /nagrodaanuluj");
+  } catch (error) {
+    console.error("[nagrody] Nie udalo sie zarejestrowac komend:", error);
+  }
+}
+
+async function callSite(path, payload) {
+  const response = await fetch(`${SITE_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": SITE_API_KEY },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+  return { ok: response.ok && data?.ok === true, status: response.status, data };
+}
+
+function isStaff(interaction) {
+  if (!STAFF_ROLE_ID) {
+    // Without a configured role, fall back to Discord's own permission model rather
+    // than letting everybody mark rewards as delivered.
+    return Boolean(interaction.memberPermissions?.has("ManageGuild"));
+  }
+  return Boolean(interaction.member?.roles?.cache?.has(STAFF_ROLE_ID));
+}
+
+function orderEmbed(order, { title, color, footer }) {
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(title)
+    .addFields(
+      { name: "Nagroda", value: String(order.rewardTitle || "-"), inline: false },
+      { name: "Kod", value: `\`${order.code}\``, inline: true },
+      { name: "Zaplacono", value: `${order.rewardCost} JC`, inline: true },
+      { name: "Kupujacy", value: order.discordUserId ? `<@${order.discordUserId}>` : "-", inline: true },
+    );
+  if (footer) embed.setFooter({ text: footer });
+  return embed;
+}
+
+async function handleNagroda(interaction) {
+  const code = interaction.options.getString("kod", true).trim();
+  await interaction.deferReply();
+
+  const result = await callSite("/api/affiliate/rewards/claim", {
+    code,
+    discordUserId: interaction.user.id,
+  });
+
+  if (!result.ok) {
+    const message = result.data?.message || "Nie udalo sie sprawdzic kodu.";
+    await interaction.editReply(`❌ ${message}`);
+    return;
+  }
+
+  const order = result.data.order;
+  await interaction.editReply({
+    content: STAFF_ROLE_ID ? `<@&${STAFF_ROLE_ID}> nowa nagroda do wydania` : undefined,
+    embeds: [
+      orderEmbed(order, {
+        title: "🟡 Nagroda do wydania",
+        color: 0xf5c518,
+        footer: "Obsluga: po wydaniu wpisz /nagrodazrealizowana z tym kodem",
+      }),
+    ],
+  });
+}
+
+async function handleNagrodaZrealizowana(interaction) {
+  if (!isStaff(interaction)) {
+    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    return;
+  }
+
+  const code = interaction.options.getString("kod", true).trim();
+  const note = interaction.options.getString("notatka")?.trim() || null;
+  await interaction.deferReply();
+
+  const result = await callSite("/api/affiliate/rewards/complete", {
+    code,
+    action: "deliver",
+    deliveredBy: interaction.user.tag,
+    note,
+  });
+
+  if (!result.ok) {
+    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie oznaczyc jako wydane."}`);
+    return;
+  }
+
+  const order = result.data.order;
+  await interaction.editReply({
+    embeds: [
+      orderEmbed(order, {
+        title: "✅ Nagroda wydana",
+        color: 0x22c55e,
+        footer: `Wydal: ${interaction.user.tag}`,
+      }),
+    ],
+  });
+
+  // Best effort - plenty of people have DMs closed, and that must not fail the command.
+  try {
+    const user = await client.users.fetch(order.discordUserId);
+    await user.send(
+      `✅ Twoja nagroda **${order.rewardTitle}** (kod \`${order.code}\`) zostala wydana.` +
+        (note ? `\n${note}` : ""),
+    );
+  } catch {
+    await interaction.followUp({ content: "ℹ️ Nie moglem wyslac DM (zamkniete wiadomosci). Status widoczny na stronie.", ephemeral: true });
+  }
+}
+
+async function handleNagrodaAnuluj(interaction) {
+  if (!isStaff(interaction)) {
+    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    return;
+  }
+
+  const code = interaction.options.getString("kod", true).trim();
+  await interaction.deferReply();
+
+  const result = await callSite("/api/affiliate/rewards/complete", {
+    code,
+    action: "cancel",
+    deliveredBy: interaction.user.tag,
+  });
+
+  if (!result.ok) {
+    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie anulowac zamowienia."}`);
+    return;
+  }
+
+  const order = result.data.order;
+  await interaction.editReply({
+    embeds: [
+      orderEmbed(order, {
+        title: order.refunded ? "↩️ Anulowane, coiny zwrocone" : "↩️ Anulowane",
+        color: 0xf87171,
+        footer: `Anulowal: ${interaction.user.tag}`,
+      }),
+    ],
+  });
+
+  try {
+    const user = await client.users.fetch(order.discordUserId);
+    await user.send(
+      `↩️ Twoje zamowienie **${order.rewardTitle}** (kod \`${order.code}\`) zostalo anulowane.` +
+        (order.refunded ? ` Zwrocilismy **${order.rewardCost} JC**.` : ""),
+    );
+  } catch {}
+}
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  try {
+    if (interaction.commandName === "nagroda") return await handleNagroda(interaction);
+    if (interaction.commandName === "nagrodazrealizowana") return await handleNagrodaZrealizowana(interaction);
+    if (interaction.commandName === "nagrodaanuluj") return await handleNagrodaAnuluj(interaction);
+  } catch (error) {
+    console.error(`[nagrody] Blad komendy /${interaction.commandName}:`, error);
+    const message = "❌ Cos poszlo nie tak. Sprobuj ponownie.";
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(message).catch(() => {});
+    } else {
+      await interaction.reply({ content: message, ephemeral: true }).catch(() => {});
+    }
+  }
+});
+
+client.once("clientReady", async () => {
   console.log(`Bot zalogowany jako ${client.user?.tag}`);
   console.log(
     `Nasluch: guild=${GUILD_ID}, channel=${CHANNEL_ID || "ALL_CHANNELS"}`
   );
+  await registerRewardCommands();
 });
 
 client.on("messageCreate", async (message) => {
