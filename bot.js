@@ -56,27 +56,17 @@ const COLORS = {
 };
 
 /**
- * Every icon in the bot, overridable per entry with an env var.
+ * The icon set, served as images from the site.
  *
- * Set e.g. ICON_COIN=<:jc:1234567890> to swap the unicode fallback for a server
- * emoji. The full `<:name:id>` form is what Discord's emoji picker gives you when
- * you type a backslash before an emoji, so it can be pasted straight in.
- */
-function icon(envName, fallback) {
-  return process.env[envName]?.trim() || fallback;
-}
-
-/**
- * The same icons, served as images from the site instead of uploaded as server emoji.
+ * There used to be a parallel map of unicode emoji for use inside titles and field
+ * names, because Discord accepts a URL only where it expects an image - thumbnail,
+ * author line, footer - and text is just text. It is gone: mixing 🪙 into a heading is
+ * what made the replies look thrown together, and a clean label beside a real icon
+ * reads better than a label with an emoji glued to it.
  *
- * Worth knowing where this can and cannot be used: Discord only accepts a URL in the
- * slots that take an image - thumbnail, author icon, footer icon, main image. Text
- * inside a title or a field is plain text, so an icon there HAS to be an emoji; there
- * is no syntax for putting a hosted picture in a line of text. The ICON map above still
- * covers those, and these URLs cover everywhere an image is allowed.
- *
- * Upside over emoji: nothing to upload, no per-server emoji slots used, and updating an
- * icon is a redeploy of the site rather than a re-upload on every server.
+ * Nothing to upload, no per-server emoji slots used, and changing an icon is a deploy
+ * of the site rather than a re-upload on every server. ICON_BASE_URL overrides where
+ * they are fetched from.
  */
 const ICON_BASE = (process.env.ICON_BASE_URL?.trim() || `${BRAND.site}/bot-icons`).replace(/\/+$/, "");
 
@@ -98,22 +88,6 @@ const IMG = {
   code: iconUrl("code"),
   staff: iconUrl("staff"),
   wallet: iconUrl("wallet"),
-};
-
-const ICON = {
-  coin: icon("ICON_COIN", "🪙"),
-  gift: icon("ICON_GIFT", "🎁"),
-  pending: icon("ICON_PENDING", "🟡"),
-  done: icon("ICON_DONE", "✅"),
-  cancelled: icon("ICON_CANCELLED", "🚫"),
-  error: icon("ICON_ERROR", "⛔"),
-  info: icon("ICON_INFO", "💡"),
-  plus: icon("ICON_PLUS", "📈"),
-  minus: icon("ICON_MINUS", "📉"),
-  user: icon("ICON_USER", "👤"),
-  code: icon("ICON_CODE", "🔑"),
-  staff: icon("ICON_STAFF", "🛡️"),
-  wallet: icon("ICON_WALLET", "💳"),
 };
 
 /**
@@ -142,9 +116,9 @@ function infoEmbed(message) {
   return brandEmbed(COLORS.info).setDescription(message).setThumbnail(IMG.info);
 }
 
-/** Renders an amount as a padded code block so columns line up between replies. */
+/** Renders an amount as a code block so columns line up between replies. */
 function coins(amount) {
-  return `${ICON.coin} \`${Number(amount).toLocaleString("pl-PL")} JC\``;
+  return `\`${Number(amount).toLocaleString("pl-PL")} Juszko Coins\``;
 }
 
 const AGENT_META = {
@@ -502,7 +476,7 @@ async function denyStaff(interaction) {
   await interaction.reply({
     embeds: [
       brandEmbed(COLORS.danger)
-        .setTitle(`${ICON.staff}  Brak uprawnien`)
+        .setTitle(`Brak uprawnien`)
         .setThumbnail(IMG.staff)
         .setDescription("Ta komenda jest tylko dla obslugi.")
         .addFields({ name: "Dlaczego", value: detail }),
@@ -512,17 +486,17 @@ async function denyStaff(interaction) {
   });
 }
 
-function orderEmbed(order, { title, color, footer, statusIcon, statusImage }) {
+function orderEmbed(order, { title, color, footer, statusImage }) {
   // The reward name is the thing everyone is looking for, so it carries the visual
   // weight as the description instead of being the first of four equal fields.
   const embed = brandEmbed(color)
-    .setTitle(`${statusIcon || ICON.gift}  ${title}`)
+    .setTitle(`${title}`)
     .setDescription(`### ${order.rewardTitle || "Nagroda"}\n${DIVIDER}`)
     .addFields(
-      { name: `${ICON.code} Kod odbioru`, value: `\`\`\`${order.code}\`\`\``, inline: false },
-      { name: `${ICON.coin} Zaplacono`, value: coins(order.rewardCost), inline: true },
+      { name: `Kod odbioru`, value: `\`\`\`${order.code}\`\`\``, inline: false },
+      { name: `Zaplacono`, value: coins(order.rewardCost), inline: true },
       {
-        name: `${ICON.user} Kupujacy`,
+        name: `Kupujacy`,
         value: order.discordUserId ? `<@${order.discordUserId}>` : "—",
         inline: true,
       },
@@ -554,7 +528,6 @@ async function handleNagroda(interaction) {
     embeds: [
       orderEmbed(order, {
         title: "Nagroda do wydania",
-        statusIcon: ICON.pending,
         statusImage: IMG.pending,
         color: COLORS.brand,
         footer: "Obsluga: po wydaniu wpisz /nagrodazrealizowana z tym kodem",
@@ -590,7 +563,6 @@ async function handleNagrodaZrealizowana(interaction) {
     embeds: [
       orderEmbed(order, {
         title: "Nagroda wydana",
-        statusIcon: ICON.done,
         statusImage: IMG.done,
         color: COLORS.success,
         footer: `Wydal: ${interaction.user.tag}`,
@@ -601,12 +573,19 @@ async function handleNagrodaZrealizowana(interaction) {
   // Best effort - plenty of people have DMs closed, and that must not fail the command.
   try {
     const user = await client.users.fetch(order.discordUserId);
-    await user.send(
-      `✅ Twoja nagroda **${order.rewardTitle}** (kod \`${order.code}\`) zostala wydana.` +
-        (note ? `\n${note}` : ""),
-    );
+    const dm = brandEmbed(COLORS.success)
+      .setTitle("Nagroda wydana")
+      .setDescription(`### ${order.rewardTitle}\n${DIVIDER}`)
+      .setThumbnail(IMG.done)
+      .addFields({ name: "Kod odbioru", value: `\`\`\`${order.code}\`\`\`` });
+
+    if (note) dm.addFields({ name: "Od obslugi", value: note });
+    await user.send({ embeds: [dm] });
   } catch {
-    await interaction.followUp({ content: "ℹ️ Nie moglem wyslac DM (zamkniete wiadomosci). Status widoczny na stronie.", ephemeral: true });
+    await interaction.followUp({
+      embeds: [infoEmbed("Nie moglem wyslac DM (zamkniete wiadomosci). Status widoczny na stronie.")],
+      ephemeral: true,
+    });
   }
 }
 
@@ -634,8 +613,7 @@ async function handleNagrodaAnuluj(interaction) {
   await interaction.editReply({
     embeds: [
       orderEmbed(order, {
-        title: order.refunded ? "Anulowane — coiny zwrocone" : "Anulowane",
-        statusIcon: ICON.cancelled,
+        title: order.refunded ? "Anulowane — Juszko Coins zwrocone" : "Anulowane",
         statusImage: IMG.cancelled,
         color: COLORS.danger,
         footer: `Anulowal: ${interaction.user.tag}`,
@@ -645,10 +623,17 @@ async function handleNagrodaAnuluj(interaction) {
 
   try {
     const user = await client.users.fetch(order.discordUserId);
-    await user.send(
-      `↩️ Twoje zamowienie **${order.rewardTitle}** (kod \`${order.code}\`) zostalo anulowane.` +
-        (order.refunded ? ` Zwrocilismy **${order.rewardCost} JC**.` : ""),
-    );
+    const dm = brandEmbed(COLORS.danger)
+      .setTitle("Zamowienie anulowane")
+      .setDescription(`### ${order.rewardTitle}\n${DIVIDER}`)
+      .setThumbnail(IMG.cancelled)
+      .addFields({ name: "Kod", value: `\`${order.code}\``, inline: true });
+
+    if (order.refunded) {
+      dm.addFields({ name: "Zwrocono", value: coins(order.rewardCost), inline: true });
+    }
+
+    await user.send({ embeds: [dm] });
   } catch {}
 }
 
@@ -680,21 +665,23 @@ async function handleCoins(interaction, sign) {
   const added = sign > 0;
 
   const embed = brandEmbed(added ? COLORS.success : COLORS.danger)
-    .setTitle(`${added ? ICON.plus : ICON.minus}  ${added ? "Dodano coiny" : "Odjeto coiny"}`)
-    .setDescription(`### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} JC\n${DIVIDER}`)
+    .setTitle(added ? "Dodano Juszko Coins" : "Odjeto Juszko Coins")
+    .setDescription(
+      `### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} Juszko Coins\n${DIVIDER}`,
+    )
     .setThumbnail(target.displayAvatarURL())
     .addFields(
-      { name: `${ICON.user} Uzytkownik`, value: `<@${target.id}>`, inline: true },
+      { name: "Uzytkownik", value: `<@${target.id}>`, inline: true },
       {
-        name: `${ICON.wallet} Saldo`,
+        name: "Saldo",
         // The arrow makes before/after readable at a glance; bold marks the value
         // that matters now.
-        value: `\`${balanceBefore}\` → **\`${balanceAfter} JC\`**`,
+        value: `\`${balanceBefore}\` → **\`${balanceAfter} Juszko Coins\`**`,
         inline: true,
       },
     );
 
-  if (reason) embed.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
+  if (reason) embed.addFields({ name: `Powod`, value: reason, inline: false });
   embed.setFooter({ text: `Wykonal: ${interaction.user.tag}`, iconURL: added ? IMG.plus : IMG.minus });
 
   await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
@@ -703,13 +690,14 @@ async function handleCoins(interaction, sign) {
   // rather than being a bare line of text.
   try {
     const dm = brandEmbed(added ? COLORS.success : COLORS.danger)
-      .setTitle(`${added ? ICON.plus : ICON.minus}  ${added ? "Otrzymales coiny" : "Odjeto Ci coiny"}`)
+      .setTitle(added ? "Otrzymales Juszko Coins" : "Odjeto Ci Juszko Coins")
       .setDescription(
-        `### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} JC\n${DIVIDER}`,
+        `### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} Juszko Coins\n${DIVIDER}`,
       )
-      .addFields({ name: `${ICON.wallet} Twoje saldo`, value: coins(balanceAfter), inline: true });
+      .setThumbnail(added ? IMG.plus : IMG.minus)
+      .addFields({ name: "Twoje saldo", value: coins(balanceAfter), inline: true });
 
-    if (reason) dm.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
+    if (reason) dm.addFields({ name: "Powod", value: reason, inline: false });
     dm.setFooter({ text: "Nagrody znajdziesz w zakladce Zarabiaj z nami", iconURL: IMG.gift });
 
     await target.send({ embeds: [dm] });
@@ -743,7 +731,7 @@ async function handleSaldo(interaction) {
         infoEmbed(
           self
             ? `Nie masz jeszcze konta afiliacyjnego.\nZaloguj sie na [stronie](${BRAND.site}/zarabiaj-z-nami) przez Discord, zeby je zalozyc.`
-            : `<@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
+            : `<@${target.id}> nie ma jeszcze konta afiliacyjnego (0 Juszko Coins).`,
         ),
       ],
       allowedMentions: { parse: [] },
@@ -754,9 +742,12 @@ async function handleSaldo(interaction) {
   // The number is the whole point of the command, so it gets heading size rather
   // than being buried in a sentence.
   const embed = brandEmbed(COLORS.brand)
-    .setTitle(`${ICON.wallet}  ${self ? "Twoje saldo" : "Saldo uzytkownika"}`)
-    .setDescription(`# ${Number(result.data.balance).toLocaleString("pl-PL")} JC\n${DIVIDER}`)
-    .addFields({ name: `${ICON.user} Konto`, value: `<@${target.id}>`, inline: true })
+    .setTitle(self ? "Twoje saldo" : "Saldo uzytkownika")
+    // Heading size, but not `#` - at h1 a four-digit balance wraps on a phone.
+    .setDescription(
+      `## ${Number(result.data.balance).toLocaleString("pl-PL")} Juszko Coins\n${DIVIDER}`,
+    )
+    .addFields({ name: "Konto", value: `<@${target.id}>`, inline: true })
     .setThumbnail(target.displayAvatarURL())
     .setFooter({ text: "Nagrode wymienisz na stronie, odbierzesz komenda /nagroda", iconURL: IMG.wallet });
 
