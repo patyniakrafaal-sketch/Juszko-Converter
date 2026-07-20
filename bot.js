@@ -20,7 +20,11 @@ const SITE_URL = (process.env.SITE_URL?.trim() || "https://juszkoreps-czjp.onren
 const SITE_API_KEY = process.env.INTERNAL_API_KEY?.trim() || "";
 // Accepts several ids separated by commas/spaces, so access can be given to more than
 // one role without redeploying (e.g. staff plus a dedicated rewards role).
-const STAFF_ROLE_IDS = String(process.env.STAFF_ROLE_ID || process.env.DISCORD_ADMIN_ROLE_ID || "")
+// Both spellings are accepted because the singular name is easy to type as a plural when
+// the value is a list.
+const STAFF_ROLE_IDS = String(
+  process.env.STAFF_ROLE_ID || process.env.STAFF_ROLE_IDS || process.env.DISCORD_ADMIN_ROLE_ID || "",
+)
   .split(/[,\s]+/)
   .map((id) => id.trim())
   .filter(Boolean);
@@ -297,8 +301,10 @@ const rewardCommands = [
     .addStringOption((option) => option.setName("powod").setDescription("Powod (widoczny w historii)").setRequired(false)),
   new SlashCommandBuilder()
     .setName("saldo")
-    .setDescription("Sprawdz saldo coinow uzytkownika (tylko obsluga)")
-    .addUserOption((option) => option.setName("uzytkownik").setDescription("Czyje saldo").setRequired(true)),
+    .setDescription("Sprawdz swoje saldo coinow")
+    .addUserOption((option) =>
+      option.setName("uzytkownik").setDescription("Czyje saldo (tylko obsluga)").setRequired(false),
+    ),
 ].map((command) => command.toJSON());
 
 async function registerRewardCommands() {
@@ -340,6 +346,25 @@ function isStaff(interaction) {
     Array.isArray(roles) ? roles.includes(id) : Boolean(roles?.cache?.has(id));
 
   return STAFF_ROLE_IDS.some(has);
+}
+
+// A bare "you are not staff" gives no way to tell a missing env var apart from a missing
+// role, which is exactly the thing that is wrong when this fires unexpectedly.
+async function denyStaff(interaction) {
+  const roles = interaction.member?.roles;
+  const owned = Array.isArray(roles) ? roles : [...(roles?.cache?.keys() ?? [])];
+
+  const detail = !STAFF_ROLE_IDS.length
+    ? "Bot nie ma ustawionej zmiennej STAFF_ROLE_ID, wiec nie wie ktora rola to obsluga."
+    : `Wymagana rola: ${STAFF_ROLE_IDS.map((id) => `<@&${id}>`).join(" lub ")}.\nTwoje role: ${
+        owned.length ? owned.map((id) => `<@&${id}>`).join(", ") : "brak"
+      }`;
+
+  await interaction.reply({
+    content: `❌ Ta komenda jest tylko dla obslugi.\n${detail}`,
+    ephemeral: true,
+    allowedMentions: { parse: [] },
+  });
 }
 
 function orderEmbed(order, { title, color, footer }) {
@@ -386,7 +411,7 @@ async function handleNagroda(interaction) {
 
 async function handleNagrodaZrealizowana(interaction) {
   if (!isStaff(interaction)) {
-    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    await denyStaff(interaction);
     return;
   }
 
@@ -431,7 +456,7 @@ async function handleNagrodaZrealizowana(interaction) {
 
 async function handleNagrodaAnuluj(interaction) {
   if (!isStaff(interaction)) {
-    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    await denyStaff(interaction);
     return;
   }
 
@@ -471,7 +496,7 @@ async function handleNagrodaAnuluj(interaction) {
 
 async function handleCoins(interaction, sign) {
   if (!isStaff(interaction)) {
-    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    await denyStaff(interaction);
     return;
   }
 
@@ -516,12 +541,17 @@ async function handleCoins(interaction, sign) {
 }
 
 async function handleSaldo(interaction) {
-  if (!isStaff(interaction)) {
-    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+  // Checking your own balance is not a staff action - the reply is ephemeral, so nobody
+  // learns anything they could not already see on the site. Only reading someone else's is.
+  const requested = interaction.options.getUser("uzytkownik", false);
+  const self = !requested || requested.id === interaction.user.id;
+
+  if (!self && !isStaff(interaction)) {
+    await denyStaff(interaction);
     return;
   }
 
-  const target = interaction.options.getUser("uzytkownik", true);
+  const target = requested ?? interaction.user;
   await interaction.deferReply({ ephemeral: true });
 
   const result = await callSite("/api/affiliate/coins/balance", { discordUserId: target.id });
@@ -531,11 +561,16 @@ async function handleSaldo(interaction) {
     return;
   }
 
-  await interaction.editReply(
-    result.data.exists
-      ? `💰 <@${target.id}> ma **${result.data.balance} JC**.`
-      : `ℹ️ <@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
-  );
+  const who = self ? "Masz" : `<@${target.id}> ma`;
+
+  await interaction.editReply({
+    content: result.data.exists
+      ? `💰 ${who} **${result.data.balance} JC**.`
+      : self
+        ? "ℹ️ Nie masz jeszcze konta afiliacyjnego (0 JC). Zaloguj sie na stronie przez Discord."
+        : `ℹ️ <@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
+    allowedMentions: { parse: [] },
+  });
 }
 
 client.on("interactionCreate", async (interaction) => {
