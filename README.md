@@ -1,8 +1,7 @@
 # Juszko Converter — bot Discord
 
 Bot robi dwie rzeczy: **zamienia linki produktów na linki agentów** i **obsługuje
-wydawanie nagród kupionych za Juszko Coins**.
-
+nagrody z Zarabiaj znami na juszkofinds.pl**
 Opis obu botów naraz (ten + bot zaproszeń) jest w [BOTY.md](BOTY.md).
 
 ---
@@ -11,7 +10,7 @@ Opis obu botów naraz (ten + bot zaproszeń) jest w [BOTY.md](BOTY.md).
 
 ### `/nagroda kod:`
 
-**Kto może użyć:** każdy użytkownik serwera.
+**Kto może użyć:** tylko osoby z odpwienia rola 
 
 Realizuje nagrodę kupioną wcześniej na stronie. Klient kupuje nagrodę w zakładce
 „Zarabiaj z nami" i dostaje kod odbioru.
@@ -44,7 +43,7 @@ samym kodem.
 
 ### `/saldo [uzytkownik:]`
 
-**Kto może użyć:** bez argumentu — **każdy**. Z argumentem — tylko obsługa.
+**Kto może użyć:** tylko uprwanione do tego osoby**
 
 ```
 /saldo                      → Twoje saldo
@@ -61,7 +60,7 @@ na stronie przez Discord — konto zakłada się przy pierwszym logowaniu.
 
 ### `/nagrodazrealizowana kod: [notatka:]`
 
-**Kto może użyć:** tylko obsługa.
+**Kto może użyć:** tylko uprwanione d o tego osby okpa rafxez
 
 Oznacza nagrodę jako wydaną i **wysyła klientowi wiadomość prywatną**.
 
