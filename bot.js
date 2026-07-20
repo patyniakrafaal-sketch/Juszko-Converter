@@ -273,6 +273,26 @@ const rewardCommands = [
     .setName("nagrodaanuluj")
     .setDescription("Anuluj zamowienie i zwroc coiny (tylko obsluga)")
     .addStringOption((option) => option.setName("kod").setDescription("Kod odbioru").setRequired(true)),
+  new SlashCommandBuilder()
+    .setName("dodajcoins")
+    .setDescription("Dodaj Juszko Coins uzytkownikowi (tylko obsluga)")
+    .addUserOption((option) => option.setName("uzytkownik").setDescription("Komu dodac").setRequired(true))
+    .addIntegerOption((option) =>
+      option.setName("ilosc").setDescription("Ile coinow dodac").setRequired(true).setMinValue(1).setMaxValue(1000000),
+    )
+    .addStringOption((option) => option.setName("powod").setDescription("Powod (widoczny w historii)").setRequired(false)),
+  new SlashCommandBuilder()
+    .setName("zabierzcoins")
+    .setDescription("Odejmij Juszko Coins uzytkownikowi (tylko obsluga)")
+    .addUserOption((option) => option.setName("uzytkownik").setDescription("Komu odjac").setRequired(true))
+    .addIntegerOption((option) =>
+      option.setName("ilosc").setDescription("Ile coinow odjac").setRequired(true).setMinValue(1).setMaxValue(1000000),
+    )
+    .addStringOption((option) => option.setName("powod").setDescription("Powod (widoczny w historii)").setRequired(false)),
+  new SlashCommandBuilder()
+    .setName("saldo")
+    .setDescription("Sprawdz saldo coinow uzytkownika (tylko obsluga)")
+    .addUserOption((option) => option.setName("uzytkownik").setDescription("Czyje saldo").setRequired(true)),
 ].map((command) => command.toJSON());
 
 async function registerRewardCommands() {
@@ -438,6 +458,75 @@ async function handleNagrodaAnuluj(interaction) {
   } catch {}
 }
 
+async function handleCoins(interaction, sign) {
+  if (!isStaff(interaction)) {
+    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    return;
+  }
+
+  const target = interaction.options.getUser("uzytkownik", true);
+  const amount = interaction.options.getInteger("ilosc", true);
+  const reason = interaction.options.getString("powod")?.trim() || null;
+  await interaction.deferReply();
+
+  const result = await callSite("/api/affiliate/coins/grant", {
+    discordUserId: target.id,
+    username: target.username,
+    amount: sign * amount,
+    reason,
+    grantedBy: interaction.user.tag,
+  });
+
+  if (!result.ok) {
+    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie zmienic salda."}`);
+    return;
+  }
+
+  const { balanceBefore, balanceAfter } = result.data;
+  const embed = new EmbedBuilder()
+    .setColor(sign > 0 ? 0x22c55e : 0xf87171)
+    .setTitle(sign > 0 ? "➕ Dodano coiny" : "➖ Odjeto coiny")
+    .addFields(
+      { name: "Uzytkownik", value: `<@${target.id}>`, inline: true },
+      { name: "Zmiana", value: `${sign > 0 ? "+" : "-"}${amount} JC`, inline: true },
+      { name: "Saldo", value: `${balanceBefore} → **${balanceAfter} JC**`, inline: true },
+    )
+    .setFooter({ text: `Wykonal: ${interaction.user.tag}${reason ? ` | ${reason}` : ""}` });
+
+  await interaction.editReply({ embeds: [embed] });
+
+  try {
+    await target.send(
+      sign > 0
+        ? `➕ Otrzymales **${amount} JC**. Twoje saldo: **${balanceAfter} JC**.${reason ? `\nPowod: ${reason}` : ""}`
+        : `➖ Odjeto Ci **${amount} JC**. Twoje saldo: **${balanceAfter} JC**.${reason ? `\nPowod: ${reason}` : ""}`,
+    );
+  } catch {}
+}
+
+async function handleSaldo(interaction) {
+  if (!isStaff(interaction)) {
+    await interaction.reply({ content: "❌ Ta komenda jest tylko dla obslugi.", ephemeral: true });
+    return;
+  }
+
+  const target = interaction.options.getUser("uzytkownik", true);
+  await interaction.deferReply({ ephemeral: true });
+
+  const result = await callSite("/api/affiliate/coins/balance", { discordUserId: target.id });
+
+  if (!result.ok) {
+    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie odczytac salda."}`);
+    return;
+  }
+
+  await interaction.editReply(
+    result.data.exists
+      ? `💰 <@${target.id}> ma **${result.data.balance} JC**.`
+      : `ℹ️ <@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
+  );
+}
+
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -445,6 +534,9 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "nagroda") return await handleNagroda(interaction);
     if (interaction.commandName === "nagrodazrealizowana") return await handleNagrodaZrealizowana(interaction);
     if (interaction.commandName === "nagrodaanuluj") return await handleNagrodaAnuluj(interaction);
+    if (interaction.commandName === "dodajcoins") return await handleCoins(interaction, 1);
+    if (interaction.commandName === "zabierzcoins") return await handleCoins(interaction, -1);
+    if (interaction.commandName === "saldo") return await handleSaldo(interaction);
   } catch (error) {
     console.error(`[nagrody] Blad komendy /${interaction.commandName}:`, error);
     const message = "❌ Cos poszlo nie tak. Sprobuj ponownie.";
