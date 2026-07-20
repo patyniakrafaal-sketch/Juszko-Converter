@@ -34,6 +34,83 @@ const USFANS_EMOJI_ID = process.env.USFANS_EMOJI_ID?.trim() || "";
 const KAKOBUY_EMOJI_ID = process.env.KAKOBUY_EMOJI_ID?.trim() || "";
 const LITBUY_EMOJI_ID = process.env.LITBUY_EMOJI_ID?.trim() || "";
 const RAWLINK_EMOJI_ID = process.env.RAWLINK_EMOJI_ID?.trim() || "";
+// --- Wyglad -----------------------------------------------------------------
+//
+// Discord renders no CSS, so the only design surface is colour, layout and icons.
+// Keeping all three in one place is what makes the replies look like one product
+// instead of six commands written on different days.
+
+const BRAND = {
+  name: "JuszkoReps",
+  site: (process.env.SITE_URL?.trim() || "https://juszkoreps-czjp.onrender.com").replace(/\/+$/, ""),
+  // The small round image next to the author line on every embed.
+  logo: process.env.BRAND_LOGO_URL?.trim() || "",
+};
+
+const COLORS = {
+  brand: 0xf5c518, // amber - the site's accent
+  success: 0x2ecc71,
+  danger: 0xe74c3c,
+  info: 0x5865f2, // Discord blurple, for neutral information
+  muted: 0x2b2d31, // matches the dark embed background, for quiet cards
+};
+
+/**
+ * Every icon in the bot, overridable per entry with an env var.
+ *
+ * Set e.g. ICON_COIN=<:jc:1234567890> to swap the unicode fallback for a server
+ * emoji. The full `<:name:id>` form is what Discord's emoji picker gives you when
+ * you type a backslash before an emoji, so it can be pasted straight in.
+ */
+function icon(envName, fallback) {
+  return process.env[envName]?.trim() || fallback;
+}
+
+const ICON = {
+  coin: icon("ICON_COIN", "🪙"),
+  gift: icon("ICON_GIFT", "🎁"),
+  pending: icon("ICON_PENDING", "🟡"),
+  done: icon("ICON_DONE", "✅"),
+  cancelled: icon("ICON_CANCELLED", "🚫"),
+  error: icon("ICON_ERROR", "⛔"),
+  info: icon("ICON_INFO", "💡"),
+  plus: icon("ICON_PLUS", "📈"),
+  minus: icon("ICON_MINUS", "📉"),
+  user: icon("ICON_USER", "👤"),
+  code: icon("ICON_CODE", "🔑"),
+  staff: icon("ICON_STAFF", "🛡️"),
+  wallet: icon("ICON_WALLET", "💳"),
+};
+
+/**
+ * Base embed every reply is built from: same author line, same footer, same
+ * timestamp. Consistency is most of what "professional" means here.
+ */
+function brandEmbed(color = COLORS.brand) {
+  const embed = new EmbedBuilder().setColor(color).setTimestamp();
+  const author = { name: BRAND.name, url: BRAND.site };
+  if (BRAND.logo) author.iconURL = BRAND.logo;
+  return embed.setAuthor(author);
+}
+
+/** Thin horizontal rule. Discord has no divider, so a field of spacers stands in. */
+const DIVIDER = "▬".repeat(18);
+
+function errorEmbed(message, hint) {
+  const embed = brandEmbed(COLORS.danger).setDescription(`${ICON.error}  **${message}**`);
+  if (hint) embed.addFields({ name: "Co zrobic", value: hint });
+  return embed;
+}
+
+function infoEmbed(message) {
+  return brandEmbed(COLORS.info).setDescription(`${ICON.info}  ${message}`);
+}
+
+/** Renders an amount as a padded code block so columns line up between replies. */
+function coins(amount) {
+  return `${ICON.coin} \`${Number(amount).toLocaleString("pl-PL")} JC\``;
+}
+
 const AGENT_META = {
   usfans: {
     label: "USFans",
@@ -387,22 +464,33 @@ async function denyStaff(interaction) {
       }`;
 
   await interaction.reply({
-    content: `❌ Ta komenda jest tylko dla obslugi.\n${detail}`,
+    embeds: [
+      brandEmbed(COLORS.danger)
+        .setTitle(`${ICON.staff}  Brak uprawnien`)
+        .setDescription("Ta komenda jest tylko dla obslugi.")
+        .addFields({ name: "Dlaczego", value: detail }),
+    ],
     ephemeral: true,
     allowedMentions: { parse: [] },
   });
 }
 
-function orderEmbed(order, { title, color, footer }) {
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
+function orderEmbed(order, { title, color, footer, statusIcon }) {
+  // The reward name is the thing everyone is looking for, so it carries the visual
+  // weight as the description instead of being the first of four equal fields.
+  const embed = brandEmbed(color)
+    .setTitle(`${statusIcon || ICON.gift}  ${title}`)
+    .setDescription(`### ${order.rewardTitle || "Nagroda"}\n${DIVIDER}`)
     .addFields(
-      { name: "Nagroda", value: String(order.rewardTitle || "-"), inline: false },
-      { name: "Kod", value: `\`${order.code}\``, inline: true },
-      { name: "Zaplacono", value: `${order.rewardCost} JC`, inline: true },
-      { name: "Kupujacy", value: order.discordUserId ? `<@${order.discordUserId}>` : "-", inline: true },
+      { name: `${ICON.code} Kod odbioru`, value: `\`\`\`${order.code}\`\`\``, inline: false },
+      { name: `${ICON.coin} Zaplacono`, value: coins(order.rewardCost), inline: true },
+      {
+        name: `${ICON.user} Kupujacy`,
+        value: order.discordUserId ? `<@${order.discordUserId}>` : "—",
+        inline: true,
+      },
     );
+
   if (footer) embed.setFooter({ text: footer });
   return embed;
 }
@@ -418,7 +506,7 @@ async function handleNagroda(interaction) {
 
   if (!result.ok) {
     const message = result.data?.message || "Nie udalo sie sprawdzic kodu.";
-    await interaction.editReply(`❌ ${message}`);
+    await interaction.editReply({ embeds: [errorEmbed(message)] });
     return;
   }
 
@@ -427,8 +515,9 @@ async function handleNagroda(interaction) {
     content: STAFF_ROLE_ID ? `<@&${STAFF_ROLE_ID}> nowa nagroda do wydania` : undefined,
     embeds: [
       orderEmbed(order, {
-        title: "🟡 Nagroda do wydania",
-        color: 0xf5c518,
+        title: "Nagroda do wydania",
+        statusIcon: ICON.pending,
+        color: COLORS.brand,
         footer: "Obsluga: po wydaniu wpisz /nagrodazrealizowana z tym kodem",
       }),
     ],
@@ -453,7 +542,7 @@ async function handleNagrodaZrealizowana(interaction) {
   });
 
   if (!result.ok) {
-    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie oznaczyc jako wydane."}`);
+    await interaction.editReply({ embeds: [errorEmbed(result.data?.message || "Nie udalo sie oznaczyc jako wydane.")] });
     return;
   }
 
@@ -461,8 +550,9 @@ async function handleNagrodaZrealizowana(interaction) {
   await interaction.editReply({
     embeds: [
       orderEmbed(order, {
-        title: "✅ Nagroda wydana",
-        color: 0x22c55e,
+        title: "Nagroda wydana",
+        statusIcon: ICON.done,
+        color: COLORS.success,
         footer: `Wydal: ${interaction.user.tag}`,
       }),
     ],
@@ -496,7 +586,7 @@ async function handleNagrodaAnuluj(interaction) {
   });
 
   if (!result.ok) {
-    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie anulowac zamowienia."}`);
+    await interaction.editReply({ embeds: [errorEmbed(result.data?.message || "Nie udalo sie anulowac zamowienia.")] });
     return;
   }
 
@@ -504,8 +594,9 @@ async function handleNagrodaAnuluj(interaction) {
   await interaction.editReply({
     embeds: [
       orderEmbed(order, {
-        title: order.refunded ? "↩️ Anulowane, coiny zwrocone" : "↩️ Anulowane",
-        color: 0xf87171,
+        title: order.refunded ? "Anulowane — coiny zwrocone" : "Anulowane",
+        statusIcon: ICON.cancelled,
+        color: COLORS.danger,
         footer: `Anulowal: ${interaction.user.tag}`,
       }),
     ],
@@ -540,29 +631,47 @@ async function handleCoins(interaction, sign) {
   });
 
   if (!result.ok) {
-    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie zmienic salda."}`);
+    await interaction.editReply({ embeds: [errorEmbed(result.data?.message || "Nie udalo sie zmienic salda.")] });
     return;
   }
 
   const { balanceBefore, balanceAfter } = result.data;
-  const embed = new EmbedBuilder()
-    .setColor(sign > 0 ? 0x22c55e : 0xf87171)
-    .setTitle(sign > 0 ? "➕ Dodano coiny" : "➖ Odjeto coiny")
+  const added = sign > 0;
+
+  const embed = brandEmbed(added ? COLORS.success : COLORS.danger)
+    .setTitle(`${added ? ICON.plus : ICON.minus}  ${added ? "Dodano coiny" : "Odjeto coiny"}`)
+    .setDescription(`### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} JC\n${DIVIDER}`)
+    .setThumbnail(target.displayAvatarURL())
     .addFields(
-      { name: "Uzytkownik", value: `<@${target.id}>`, inline: true },
-      { name: "Zmiana", value: `${sign > 0 ? "+" : "-"}${amount} JC`, inline: true },
-      { name: "Saldo", value: `${balanceBefore} → **${balanceAfter} JC**`, inline: true },
-    )
-    .setFooter({ text: `Wykonal: ${interaction.user.tag}${reason ? ` | ${reason}` : ""}` });
-
-  await interaction.editReply({ embeds: [embed] });
-
-  try {
-    await target.send(
-      sign > 0
-        ? `➕ Otrzymales **${amount} JC**. Twoje saldo: **${balanceAfter} JC**.${reason ? `\nPowod: ${reason}` : ""}`
-        : `➖ Odjeto Ci **${amount} JC**. Twoje saldo: **${balanceAfter} JC**.${reason ? `\nPowod: ${reason}` : ""}`,
+      { name: `${ICON.user} Uzytkownik`, value: `<@${target.id}>`, inline: true },
+      {
+        name: `${ICON.wallet} Saldo`,
+        // The arrow makes before/after readable at a glance; bold marks the value
+        // that matters now.
+        value: `\`${balanceBefore}\` → **\`${balanceAfter} JC\`**`,
+        inline: true,
+      },
     );
+
+  if (reason) embed.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
+  embed.setFooter({ text: `Wykonal: ${interaction.user.tag}` });
+
+  await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
+
+  // The DM is the only part most users ever see, so it gets the same treatment
+  // rather than being a bare line of text.
+  try {
+    const dm = brandEmbed(added ? COLORS.success : COLORS.danger)
+      .setTitle(`${added ? ICON.plus : ICON.minus}  ${added ? "Otrzymales coiny" : "Odjeto Ci coiny"}`)
+      .setDescription(
+        `### ${added ? "+" : "−"}${amount.toLocaleString("pl-PL")} JC\n${DIVIDER}`,
+      )
+      .addFields({ name: `${ICON.wallet} Twoje saldo`, value: coins(balanceAfter), inline: true });
+
+    if (reason) dm.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
+    dm.setFooter({ text: "Nagrody znajdziesz w zakladce Zarabiaj z nami" });
+
+    await target.send({ embeds: [dm] });
   } catch {}
 }
 
@@ -583,20 +692,34 @@ async function handleSaldo(interaction) {
   const result = await callSite("/api/affiliate/coins/balance", { discordUserId: target.id });
 
   if (!result.ok) {
-    await interaction.editReply(`❌ ${result.data?.message || "Nie udalo sie odczytac salda."}`);
+    await interaction.editReply({ embeds: [errorEmbed(result.data?.message || "Nie udalo sie odczytac salda.")] });
     return;
   }
 
-  const who = self ? "Masz" : `<@${target.id}> ma`;
+  if (!result.data.exists) {
+    await interaction.editReply({
+      embeds: [
+        infoEmbed(
+          self
+            ? `Nie masz jeszcze konta afiliacyjnego.\nZaloguj sie na [stronie](${BRAND.site}/zarabiaj-z-nami) przez Discord, zeby je zalozyc.`
+            : `<@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
+        ),
+      ],
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
 
-  await interaction.editReply({
-    content: result.data.exists
-      ? `💰 ${who} **${result.data.balance} JC**.`
-      : self
-        ? "ℹ️ Nie masz jeszcze konta afiliacyjnego (0 JC). Zaloguj sie na stronie przez Discord."
-        : `ℹ️ <@${target.id}> nie ma jeszcze konta afiliacyjnego (0 JC).`,
-    allowedMentions: { parse: [] },
-  });
+  // The number is the whole point of the command, so it gets heading size rather
+  // than being buried in a sentence.
+  const embed = brandEmbed(COLORS.brand)
+    .setTitle(`${ICON.wallet}  ${self ? "Twoje saldo" : "Saldo uzytkownika"}`)
+    .setDescription(`# ${Number(result.data.balance).toLocaleString("pl-PL")} JC\n${DIVIDER}`)
+    .addFields({ name: `${ICON.user} Konto`, value: `<@${target.id}>`, inline: true })
+    .setThumbnail(target.displayAvatarURL())
+    .setFooter({ text: "Nagrode wymienisz na stronie, odbierzesz komenda /nagroda" });
+
+  await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
 }
 
 client.on("interactionCreate", async (interaction) => {
@@ -611,11 +734,13 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.commandName === "saldo") return await handleSaldo(interaction);
   } catch (error) {
     console.error(`[nagrody] Blad komendy /${interaction.commandName}:`, error);
-    const message = "❌ Cos poszlo nie tak. Sprobuj ponownie.";
+    const payload = {
+      embeds: [errorEmbed("Cos poszlo nie tak.", "Sprobuj ponownie za chwile.")],
+    };
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(message).catch(() => {});
+      await interaction.editReply(payload).catch(() => {});
     } else {
-      await interaction.reply({ content: message, ephemeral: true }).catch(() => {});
+      await interaction.reply({ ...payload, ephemeral: true }).catch(() => {});
     }
   }
 });
