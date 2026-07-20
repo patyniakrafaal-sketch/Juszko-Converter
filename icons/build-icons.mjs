@@ -233,6 +233,35 @@ const ICONS = {
   ),
 };
 
+/**
+ * A glyph can silently fail to render - the minus sign did, because its drop shadow
+ * filter used a percentage region and a horizontal rule has a zero-height bounding box.
+ * The result is a tile in one flat colour, which looks fine in a file listing and is
+ * only caught by eye.
+ *
+ * So: measure contrast, not whiteness. Checking for white pixels would have passed the
+ * broken minus (white tile? no) but failed the corrected coin, whose glyph is dark text
+ * on a light disc. Comparing each pixel's luminance against the tile's dominant
+ * luminance catches a missing glyph whichever way round it is drawn.
+ */
+async function glyphPixels(png) {
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  const luma = (i) => 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+
+  const values = [];
+  for (let p = 0; p < data.length; p += info.channels) {
+    if (info.channels === 4 && data[p + 3] < 200) continue; // ignore transparent margin
+    values.push(luma(p));
+  }
+  if (!values.length) return 0;
+
+  values.sort((a, b) => a - b);
+  const median = values[Math.floor(values.length / 2)]; // the tile itself
+  return values.filter((v) => Math.abs(v - median) > 60).length;
+}
+
+const MIN_GLYPH_PIXELS = 300;
+
 await mkdir(OUT_DIR, { recursive: true });
 
 const report = [];
@@ -240,11 +269,18 @@ for (const [name, markup] of Object.entries(ICONS)) {
   const png = await sharp(Buffer.from(markup)).resize(SIZE, SIZE).png({ compressionLevel: 9 }).toBuffer();
   await writeFile(path.join(OUT_DIR, `${name}.png`), png);
   await writeFile(path.join(OUT_DIR, `${name}.svg`), markup);
-  report.push({ name, kb: +(png.length / 1024).toFixed(1) });
+  report.push({ name, kb: +(png.length / 1024).toFixed(1), glyph: await glyphPixels(png) });
 }
 
 const tooBig = report.filter((r) => r.kb > 256);
+const blank = report.filter((r) => r.glyph < MIN_GLYPH_PIXELS);
+
 console.log(`Wygenerowano ${report.length} ikon (PNG 128x128 + zrodlowy SVG):\n`);
-for (const r of report) console.log(`  ${r.name.padEnd(12)} ${String(r.kb).padStart(5)} KB`);
+for (const r of report) {
+  const flag = r.glyph < MIN_GLYPH_PIXELS ? "  <-- BRAK GLIFU" : "";
+  console.log(`  ${r.name.padEnd(12)} ${String(r.kb).padStart(5)} KB   glif: ${String(r.glyph).padStart(5)} px${flag}`);
+}
+
 console.log(`\nLimit Discorda to 256 KB na emotke. Przekroczonych: ${tooBig.length}`);
-process.exit(tooBig.length ? 1 : 0);
+console.log(`Ikon bez widocznego glifu: ${blank.length}`);
+process.exit(tooBig.length || blank.length ? 1 : 0);

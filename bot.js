@@ -66,6 +66,40 @@ function icon(envName, fallback) {
   return process.env[envName]?.trim() || fallback;
 }
 
+/**
+ * The same icons, served as images from the site instead of uploaded as server emoji.
+ *
+ * Worth knowing where this can and cannot be used: Discord only accepts a URL in the
+ * slots that take an image - thumbnail, author icon, footer icon, main image. Text
+ * inside a title or a field is plain text, so an icon there HAS to be an emoji; there
+ * is no syntax for putting a hosted picture in a line of text. The ICON map above still
+ * covers those, and these URLs cover everywhere an image is allowed.
+ *
+ * Upside over emoji: nothing to upload, no per-server emoji slots used, and updating an
+ * icon is a redeploy of the site rather than a re-upload on every server.
+ */
+const ICON_BASE = (process.env.ICON_BASE_URL?.trim() || `${BRAND.site}/bot-icons`).replace(/\/+$/, "");
+
+function iconUrl(name) {
+  return `${ICON_BASE}/${name}.png`;
+}
+
+const IMG = {
+  coin: iconUrl("coin"),
+  gift: iconUrl("gift"),
+  pending: iconUrl("pending"),
+  done: iconUrl("done"),
+  cancelled: iconUrl("cancelled"),
+  error: iconUrl("error"),
+  info: iconUrl("info"),
+  plus: iconUrl("plus"),
+  minus: iconUrl("minus"),
+  user: iconUrl("user"),
+  code: iconUrl("code"),
+  staff: iconUrl("staff"),
+  wallet: iconUrl("wallet"),
+};
+
 const ICON = {
   coin: icon("ICON_COIN", "🪙"),
   gift: icon("ICON_GIFT", "🎁"),
@@ -97,13 +131,15 @@ function brandEmbed(color = COLORS.brand) {
 const DIVIDER = "▬".repeat(18);
 
 function errorEmbed(message, hint) {
-  const embed = brandEmbed(COLORS.danger).setDescription(`${ICON.error}  **${message}**`);
+  const embed = brandEmbed(COLORS.danger)
+    .setDescription(`**${message}**`)
+    .setThumbnail(IMG.error);
   if (hint) embed.addFields({ name: "Co zrobic", value: hint });
   return embed;
 }
 
 function infoEmbed(message) {
-  return brandEmbed(COLORS.info).setDescription(`${ICON.info}  ${message}`);
+  return brandEmbed(COLORS.info).setDescription(message).setThumbnail(IMG.info);
 }
 
 /** Renders an amount as a padded code block so columns line up between replies. */
@@ -467,6 +503,7 @@ async function denyStaff(interaction) {
     embeds: [
       brandEmbed(COLORS.danger)
         .setTitle(`${ICON.staff}  Brak uprawnien`)
+        .setThumbnail(IMG.staff)
         .setDescription("Ta komenda jest tylko dla obslugi.")
         .addFields({ name: "Dlaczego", value: detail }),
     ],
@@ -475,7 +512,7 @@ async function denyStaff(interaction) {
   });
 }
 
-function orderEmbed(order, { title, color, footer, statusIcon }) {
+function orderEmbed(order, { title, color, footer, statusIcon, statusImage }) {
   // The reward name is the thing everyone is looking for, so it carries the visual
   // weight as the description instead of being the first of four equal fields.
   const embed = brandEmbed(color)
@@ -491,6 +528,7 @@ function orderEmbed(order, { title, color, footer, statusIcon }) {
       },
     );
 
+  embed.setThumbnail(statusImage || IMG.gift);
   if (footer) embed.setFooter({ text: footer });
   return embed;
 }
@@ -517,6 +555,7 @@ async function handleNagroda(interaction) {
       orderEmbed(order, {
         title: "Nagroda do wydania",
         statusIcon: ICON.pending,
+        statusImage: IMG.pending,
         color: COLORS.brand,
         footer: "Obsluga: po wydaniu wpisz /nagrodazrealizowana z tym kodem",
       }),
@@ -552,6 +591,7 @@ async function handleNagrodaZrealizowana(interaction) {
       orderEmbed(order, {
         title: "Nagroda wydana",
         statusIcon: ICON.done,
+        statusImage: IMG.done,
         color: COLORS.success,
         footer: `Wydal: ${interaction.user.tag}`,
       }),
@@ -596,6 +636,7 @@ async function handleNagrodaAnuluj(interaction) {
       orderEmbed(order, {
         title: order.refunded ? "Anulowane — coiny zwrocone" : "Anulowane",
         statusIcon: ICON.cancelled,
+        statusImage: IMG.cancelled,
         color: COLORS.danger,
         footer: `Anulowal: ${interaction.user.tag}`,
       }),
@@ -654,7 +695,7 @@ async function handleCoins(interaction, sign) {
     );
 
   if (reason) embed.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
-  embed.setFooter({ text: `Wykonal: ${interaction.user.tag}` });
+  embed.setFooter({ text: `Wykonal: ${interaction.user.tag}`, iconURL: added ? IMG.plus : IMG.minus });
 
   await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
 
@@ -669,7 +710,7 @@ async function handleCoins(interaction, sign) {
       .addFields({ name: `${ICON.wallet} Twoje saldo`, value: coins(balanceAfter), inline: true });
 
     if (reason) dm.addFields({ name: `${ICON.info} Powod`, value: reason, inline: false });
-    dm.setFooter({ text: "Nagrody znajdziesz w zakladce Zarabiaj z nami" });
+    dm.setFooter({ text: "Nagrody znajdziesz w zakladce Zarabiaj z nami", iconURL: IMG.gift });
 
     await target.send({ embeds: [dm] });
   } catch {}
@@ -717,7 +758,7 @@ async function handleSaldo(interaction) {
     .setDescription(`# ${Number(result.data.balance).toLocaleString("pl-PL")} JC\n${DIVIDER}`)
     .addFields({ name: `${ICON.user} Konto`, value: `<@${target.id}>`, inline: true })
     .setThumbnail(target.displayAvatarURL())
-    .setFooter({ text: "Nagrode wymienisz na stronie, odbierzesz komenda /nagroda" });
+    .setFooter({ text: "Nagrode wymienisz na stronie, odbierzesz komenda /nagroda", iconURL: IMG.wallet });
 
   await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
 }

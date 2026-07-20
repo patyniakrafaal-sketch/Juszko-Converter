@@ -9,7 +9,22 @@ jeśli chcesz zmienić kształt lub kolor, edytuj `build-icons.mjs` i przebuduj:
 npm run build:icons
 ```
 
-## Jak je wgrać
+
+## Dwa sposoby uzycia
+
+**1. Hosting ze strony (domyslny, nic nie musisz robic).** Te same PNG-i leza w repo strony
+w `apps/web/public/bot-icons/` i sa serwowane pod `https://TWOJA-STRONA/bot-icons/coin.png`.
+Bot bierze je stamtad automatycznie i wstawia jako miniatury embedow. Zadnego wgrywania,
+zadnych zajetych slotow emotek na serwerze, a podmiana ikonki to deploy strony.
+Adres mozna nadpisac zmienna `ICON_BASE_URL`.
+
+**2. Emotki serwera (opcjonalnie).** Discord przyjmuje obrazek tylko tam, gdzie jest
+miejsce na obrazek: miniatura, ikona autora, ikona stopki. Tekst w tytule i w polach to
+zwykly tekst — tam ikona **musi** byc emotka, nie ma skladni na wstawienie hostowanego
+obrazka w linie tekstu. Dlatego jesli chcesz ikonki takze przy nazwach pol, wgraj je jako
+emotki i ustaw `ICON_*` wedlug tabelki nizej.
+
+## Jak je wgrać (tylko dla wariantu 2)
 
 1. **Ustawienia serwera → Emoji → Prześlij emoji**, wybierz plik.
 2. Nazwij emotkę dokładnie tak jak plik (`coin`, `gift`, `done`, ...) — nie jest to
