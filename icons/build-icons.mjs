@@ -25,6 +25,9 @@ const SIZE = 128;
 // Tailwind's palette, exact values. Using a real ramp is what stops the set looking
 // hand-mixed: light/base/dark of one hue are guaranteed to sit in tune with each other.
 const T = {
+  amber100: "#FEF3C7",
+  amber200: "#FDE68A",
+  amber300: "#FCD34D",
   amber400: "#FBBF24",
   amber500: "#F59E0B",
   amber600: "#D97706",
@@ -110,13 +113,23 @@ const SLATE = ["sl", T.slate300, T.slate400, T.slate500];
 
 const ICONS = {
   // --- currency ---------------------------------------------------------
+  // The first version was white letters straight on the tile over a 22%-opacity disc,
+  // which was invisible - it read as "a square with JC on it", not a coin, and at 22px
+  // the letters filled the whole tile and turned to mush. The disc is opaque and light
+  // now, so the silhouette alone says coin even when the letters stop resolving, and
+  // dark text on a light disc carries much further than white on amber.
   coin: svg(
     tile(...AMBER) +
       GLYPH_SHADOW +
+      `<defs><linearGradient id="cf" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0" stop-color="${T.amber100}"/><stop offset="1" stop-color="${T.amber300}"/>` +
+      `</linearGradient></defs>` +
       `<g filter="url(#gs)">` +
-      `<circle cx="64" cy="64" r="34" fill="${T.amber900}" fill-opacity="0.22"/>` +
-      `<text x="64" y="79" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"` +
-      ` font-size="42" font-weight="900" fill="${T.white}">JC</text>` +
+      `<circle cx="64" cy="64" r="40" fill="url(#cf)"/>` +
+      // Milled edge: the ring is what makes a flat disc read as struck metal.
+      `<circle cx="64" cy="64" r="33" fill="none" stroke="${T.amber400}" stroke-width="3"/>` +
+      `<text x="64" y="77" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"` +
+      ` font-size="32" font-weight="900" fill="${T.amber900}">JC</text>` +
       `</g>`,
   ),
 
