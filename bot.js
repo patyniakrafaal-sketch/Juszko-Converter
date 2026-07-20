@@ -324,13 +324,39 @@ async function registerRewardCommands() {
 }
 
 async function callSite(path, payload) {
-  const response = await fetch(`${SITE_URL}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": SITE_API_KEY },
-    body: JSON.stringify(payload),
-  });
+  // Render puts free instances to sleep, so the first call after a quiet spell can hang
+  // for a long time. Without a deadline the interaction token expires while we wait and
+  // the user is left staring at "thinking..." with no error to act on.
+  let response;
+  try {
+    response = await fetch(`${SITE_URL}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": SITE_API_KEY },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(12_000),
+    });
+  } catch (error) {
+    console.error(`[nagrody] ${path} nie odpowiedzialo:`, error?.name || error);
+    return {
+      ok: false,
+      status: 0,
+      data: { message: "Strona nie odpowiada. Sprobuj ponownie za chwile." },
+    };
+  }
 
   const data = await response.json().catch(() => null);
+
+  // A 401 here means the bot and the site disagree about INTERNAL_API_KEY. That is a
+  // deployment problem, not something the user did, so say so instead of "nie udalo sie".
+  if (response.status === 401) {
+    console.error(`[nagrody] ${path} zwrocilo 401 - INTERNAL_API_KEY nie zgadza sie ze strona.`);
+    return {
+      ok: false,
+      status: 401,
+      data: { message: "Bot nie ma autoryzacji do strony. Zglos to administratorowi." },
+    };
+  }
+
   return { ok: response.ok && data?.ok === true, status: response.status, data };
 }
 
