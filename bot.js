@@ -18,7 +18,13 @@ const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID?.trim() || "";
 // Reward redemption: the site owns the orders, this bot is the counter people walk up to.
 const SITE_URL = (process.env.SITE_URL?.trim() || "https://juszkoreps-czjp.onrender.com").replace(/\/+$/, "");
 const SITE_API_KEY = process.env.INTERNAL_API_KEY?.trim() || "";
-const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID?.trim() || process.env.DISCORD_ADMIN_ROLE_ID?.trim() || "";
+// Accepts several ids separated by commas/spaces, so access can be given to more than
+// one role without redeploying (e.g. staff plus a dedicated rewards role).
+const STAFF_ROLE_IDS = String(process.env.STAFF_ROLE_ID || process.env.DISCORD_ADMIN_ROLE_ID || "")
+  .split(/[,\s]+/)
+  .map((id) => id.trim())
+  .filter(Boolean);
+const STAFF_ROLE_ID = STAFF_ROLE_IDS[0] || "";
 const AFFCODE = process.env.AFFCODE?.trim() || "juszko20";
 const USFANS_EMOJI_ID = process.env.USFANS_EMOJI_ID?.trim() || "";
 const KAKOBUY_EMOJI_ID = process.env.KAKOBUY_EMOJI_ID?.trim() || "";
@@ -323,12 +329,17 @@ async function callSite(path, payload) {
 }
 
 function isStaff(interaction) {
-  if (!STAFF_ROLE_ID) {
-    // Without a configured role, fall back to Discord's own permission model rather
-    // than letting everybody mark rewards as delivered.
-    return Boolean(interaction.memberPermissions?.has("ManageGuild"));
-  }
-  return Boolean(interaction.member?.roles?.cache?.has(STAFF_ROLE_ID));
+  // Server managers always pass, so access cannot be locked out by a bad role id.
+  if (interaction.memberPermissions?.has("ManageGuild")) return true;
+  if (!STAFF_ROLE_IDS.length) return false;
+
+  const roles = interaction.member?.roles;
+  // roles is a GuildMemberRoleManager on a cached member, but a plain id array when
+  // Discord sends the member uncached with the interaction.
+  const has = (id) =>
+    Array.isArray(roles) ? roles.includes(id) : Boolean(roles?.cache?.has(id));
+
+  return STAFF_ROLE_IDS.some(has);
 }
 
 function orderEmbed(order, { title, color, footer }) {
